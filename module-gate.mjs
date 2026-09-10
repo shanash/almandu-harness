@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // module-gate.mjs — MODULE.md 계약 게이트 (스키마 v1)
-// 사용: node tools/module-gate.mjs            (작업 트리 vs HEAD)
-//       node tools/module-gate.mjs --staged   (pre-commit)
-//       node tools/module-gate.mjs --base origin/main   (CI)
-//       node tools/module-gate.mjs --fix      (R12 근거 경로를 리포 루트 기준으로 자동 정정)
+// 사용: node .harness/module-gate.mjs            (작업 트리 vs HEAD)
+//       node .harness/module-gate.mjs --staged   (pre-commit)
+//       node .harness/module-gate.mjs --base origin/main   (CI)
+//       node .harness/module-gate.mjs --fix      (R12 근거 경로를 리포 루트 기준으로 자동 정정)
 // 종료 코드: FAIL 1개 이상이면 1
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
