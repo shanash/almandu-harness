@@ -97,6 +97,15 @@ const baseText = (file) => {
 // a 가 m 의 조상 모듈인가 (루트 모듈은 모든 모듈의 조상)
 const isAncestor = (a, m) => a !== m && (a.dir === '' || m.dir.startsWith(a.dir + '/'));
 
+// m 의 미결이 slug 를 이미 모듈 후보로 적어 뒀는가 — R3 "MODULE.md 없음" 경고의 침묵 조건.
+// 줄이 "모듈" 을 말하면서 그 경로를 적고 있어야 한다. 미결 표기(`.harness/`, `Assets/Scripts/Data`)와
+// 슬러그(harness, data)가 다르므로 경로의 마지막 조각만 벗겨 대조한다.
+const namedAsCandidate = (m, slug) =>
+  m.pending.split('\n').some((line) =>
+    /^- /.test(line) && line.includes('모듈') &&
+    [...line.matchAll(/[\w.\-]+(?:\/[\w.\-]+)*\/?/g)].some(
+      ([t]) => t.replace(/\/+$/, '').split('/').pop().replace(/^\.+/, '').toLowerCase() === slug));
+
 // 근거에 적힌 경로를 리포 상대 경로로 해석: 그대로 → m.dir 기준 → 조상 디렉토리 기준 순으로 존재하는 첫 후보
 const resolveEvidencePath = (m, p) => {
   const bases = [''];
@@ -160,15 +169,19 @@ for (const m of modules) {
   }
 
   // R3 의존 대칭 + 모듈 후보
-  for (const dep of m.out) {
-    const other = bySlug.get(dep);
-    if (!other) { report('WARN', slug, 'R3', `out [[${dep}]] 에 MODULE.md 없음 — 모듈 후보`); continue; }
-    if (!other.in.includes(slug)) report(lvl(m), slug, 'R3', `out [[${dep}]] 이지만 ${dep}.in 에 [[${slug}]] 없음`);
-  }
-  for (const dep of m.in) {
-    const other = bySlug.get(dep);
-    if (!other) { report('WARN', slug, 'R3', `in [[${dep}]] 에 MODULE.md 없음 — 모듈 후보`); continue; }
-    if (!other.out.includes(slug)) report(lvl(m), slug, 'R3', `in [[${dep}]] 이지만 ${dep}.out 에 [[${slug}]] 없음`);
+  for (const [dir, deps] of [['out', m.out], ['in', m.in]]) {
+    for (const dep of deps) {
+      const other = bySlug.get(dep);
+      // 상대에 MODULE.md 가 없으면 모듈 후보다. 미결이 이미 그렇게 적어 뒀으면 침묵한다 —
+      // 순환 의존을 양쪽에 적으면 조용해지는 것과 같은 원리로, 아는 사실을 두 번 말하게 하지 않는다
+      if (!other) {
+        if (!namedAsCandidate(m, dep)) report('WARN', slug, 'R3', `${dir} [[${dep}]] 에 MODULE.md 없음 — 모듈 후보`);
+        continue;
+      }
+      const back = dir === 'out' ? other.in : other.out;
+      if (!back.includes(slug))
+        report(lvl(m), slug, 'R3', `${dir} [[${dep}]] 이지만 ${dep}.${dir === 'out' ? 'in' : 'out'} 에 [[${slug}]] 없음`);
+    }
   }
 
   // R4 길이
@@ -211,8 +224,10 @@ for (const m of modules) {
     for (const ref of evidenceRefs(m, evidence)) {
       const owner = ownerOf(ref.file);
       if (!owner || owner === m || isAncestor(owner, m)) continue;
-      if (!m.out.includes(owner.fm.module))
-        report('WARN', slug, 'R6', `${id} 근거 ${ref.file} 가 [[${owner.fm.module}]] 소유이지만 out 에 없음`);
+      // 부모-자식은 스키마가 in/out 링크를 금하므로 조상 면제는 양방향이다.
+      // 방향(in/out)이 맞는지는 R3 이 보므로 여기서는 둘 중 하나에 있기만 하면 된다
+      if (!isAncestor(m, owner) && !m.out.includes(owner.fm.module) && !m.in.includes(owner.fm.module))
+        report('WARN', slug, 'R6', `${id} 근거 ${ref.file} 가 [[${owner.fm.module}]] 소유이지만 의존에 없음`);
       // R8 같은 파일:라인을 두 모듈이 불변식 근거로 인용 — 중복 계약
       const key = `${ref.file}:${ref.line}`;
       const seen = evidenceIndex.get(key);
