@@ -71,7 +71,12 @@ const bySlug = new Map(modules.map((m) => [m.fm.module, m]));
 
 // ---------- 변경 파일 ----------
 const diffCmd = staged ? 'git diff --cached --name-only' : `git diff --name-only ${base}`;
-const untracked = staged ? '' : sh('git ls-files --others --exclude-standard'); // 작업 트리 모드에서만
+const untrackedAll = sh('git ls-files --others --exclude-standard');
+// --staged 에서도 untracked MODULE.md 는 "변경됨" 으로 센다. findModules 는 파일시스템을 걷는데
+// diff 만 인덱스를 보면, 방금 쓴 계약서를 R1 이 "미변경" 이라고 답하고 R2 는 아예 돌지 않는다.
+// untracked 파일은 커밋에 아직 없으니 내용 전체가 변경이다. 소스는 그대로 제외 — staged 가
+// 아닌 .cs 는 실제로 커밋에 안 들어간다
+const untracked = staged ? untrackedAll.split('\n').filter((f) => f.endsWith('MODULE.md')).join('\n') : untrackedAll;
 const changed = [...new Set((sh(diffCmd) + '\n' + untracked).split('\n').filter(Boolean).map(toPosix))];
 const changedSet = new Set(changed);
 
