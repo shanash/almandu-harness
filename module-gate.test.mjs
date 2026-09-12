@@ -469,3 +469,57 @@ test('R3 모듈 후보 경고는 active 에서도 WARN 이다', (t) => {
   assert.equal(code, 0, out);
   assert.ok(has(out, 'WARN', 'alpha', 'R3'), out);
 });
+
+test('R11 은 인용 줄 위쪽이 밀리면 운다 — MODULE.md 가 다른 이유로 바뀌어도', (t) => {
+  // 1번 세션에서 실제로 난 사고: 근거 파일 중간이 밀렸는데 같은 커밋에서 계약서가
+  // 다른 불변식 때문에 바뀌어 R11 이 통째로 건너뛰었다. 사람이 눈으로 잡았다
+  const r = newRepo(t);
+  const inv = ['- I1. 5번째 줄에 기댄다 (근거: alpha/a.cs:5) [grep]'];
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', invariants: inv });
+  const body = [1, 2, 3, 4, 5, 6].map((i) => `  int x${i};`).join('\n');
+  write(r.dir, 'alpha/a.cs', `class A {\n${body}\n`);
+  r.commit();
+  // 근거 파일의 인용 줄 위쪽에 두 줄이 들어간다
+  write(r.dir, 'alpha/a.cs', `class A {\n  int head1;\n  int head2;\n${body}\n`);
+  // 그리고 계약서는 *다른 이유로* 바뀐다 — 인용 줄은 그대로다
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: [...inv, '- I2. 새 약속을 한다 (근거: 없음) [리뷰]'],
+    history: ['- 2026-01-01 최초 작성', '- 2026-01-02 I2 신설'],
+  });
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R11'), out);
+  assert.match(out, /5→7/);
+});
+
+test('R11 은 인용 줄 아래쪽 변경을 줄 밀림으로 보지 않는다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. 2번째 줄에 기댄다 (근거: alpha/a.cs:2) [grep]'],
+  });
+  write(r.dir, 'alpha/a.cs', 'a\nb\nc\n');
+  r.commit();
+  write(r.dir, 'alpha/a.cs', 'a\nb\nc\nd\ne\n');   // 인용 줄 아래에만 붙는다
+  const { out } = gate(r.dir);
+  assert.ok(!/인용 줄 위쪽/.test(out), out);
+});
+
+test('R11 은 이번에 같이 고친 인용은 밀림으로 묻지 않는다', (t) => {
+  // 줄이 밀린 것을 보고 사람이 인용을 고쳤다면 그게 정답이다. 다시 물으면 고칠 길이 없다
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. 그 줄에 기댄다 (근거: alpha/a.cs:2) [grep]'],
+  });
+  write(r.dir, 'alpha/a.cs', 'a\nb\nc\n');
+  r.commit();
+  write(r.dir, 'alpha/a.cs', 'head\na\nb\nc\n');
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. 그 줄에 기댄다 (근거: alpha/a.cs:3) [grep]'],   // 밀린 만큼 따라 옮겼다
+    history: ['- 2026-01-01 최초 작성', '- 2026-01-02 I1 근거를 옮긴다'],
+  });
+  const { out } = gate(r.dir);
+  assert.ok(!/인용 줄 위쪽/.test(out), out);
+});

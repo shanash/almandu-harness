@@ -104,6 +104,26 @@ const baseText = (file) => {
   try { return sh(`git show ${staged ? 'HEAD' : base}:${file}`); } catch { return null; }
 };
 
+// 근거 파일의 diff hunk 헤더 → [{a, b, d}] (a,b 는 base 쪽 시작·줄수, d 는 변경 후 줄수).
+// 계약서가 안 바뀐 인용의 줄번호는 base 좌표이므로 판정은 base 쪽 범위로 한다
+const hunkCache = new Map();
+const hunksOf = (file) => {
+  if (!hunkCache.has(file)) {
+    let out = '';
+    try { out = sh(`git diff -U0 ${staged ? '--cached' : base} -- "${file}"`); } catch { /* 삭제·신규 */ }
+    hunkCache.set(file, [...out.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)]
+      .map((m) => ({ a: +m[1], b: m[2] === undefined ? 1 : +m[2], d: m[4] === undefined ? 1 : +m[4] })));
+  }
+  return hunkCache.get(file);
+};
+
+// 인용 줄보다 위에서 늘거나 준 줄 수의 합. 0 이 아니면 그 줄은 다른 곳을 가리킨다.
+// b === 0 은 순수 삽입이라 base 쪽 범위가 비어 있다 — a 번째 줄 뒤에 들어간 것으로 센다
+const shiftAbove = (file, line) => hunksOf(file).reduce((acc, h) => {
+  const end = h.b === 0 ? h.a : h.a + h.b - 1;
+  return end < line ? acc + h.d - h.b : acc;
+}, 0);
+
 // a 가 m 의 조상 모듈인가 (루트 모듈은 모든 모듈의 조상)
 const isAncestor = (a, m) => a !== m && (a.dir === '' || m.dir.startsWith(a.dir + '/'));
 
@@ -295,11 +315,30 @@ for (const m of modules) {
 }
 
 // ---------- R11 근거 파일 역추적 ----------
-// 불변식이 근거로 인용한 파일이 변경됐는데 그 모듈의 MODULE.md 가 안 바뀌었으면 경고.
-// 소유 관계와 무관 — 검증 수단이 모듈 밖(공용 테스트 디렉토리)에 있을 때 R1 의 사각지대를 덮는다.
+// 두 질문을 묻는다.
+//  (1) 인용 줄 위쪽에 hunk 가 있나 — 인용이 다른 곳을 가리키게 됐다. MODULE.md 가 바뀌었든
+//      말든 물어야 한다. 1번 세션에서 근거 파일이 밀리는 동안 같은 커밋이 다른 불변식 때문에
+//      계약서를 건드렸고, 아래 (2) 의 조건 때문에 검사가 통째로 건너뛰어졌다
+//  (2) 근거 파일이 변경됐는데 계약서가 그대로인가 — 소유 관계와 무관하게, 검증 수단이 모듈
+//      밖(공용 테스트 디렉토리)에 있을 때 R1 의 사각지대를 덮는다
 for (const m of modules) {
-  if (changedSet.has(m.file)) continue;
   const slug = m.fm.module ?? m.file;
+  const docChanged = changedSet.has(m.file);
+  // 계약서를 이번에 고쳤다면 base 판본의 인용과 대조한다. 인용 줄을 같이 옮겼으면 사람이
+  // 이미 밀림을 본 것이므로 (1) 을 묻지 않는다 — 물어도 고칠 길이 없다
+  let baseSpecs = null;   // null = 계약서 미변경, 모든 인용이 base 좌표다
+  if (docChanged) {
+    const prev = baseText(m.file);
+    if (!prev) continue;  // 새 계약서 — 대조할 판본이 없고 인용은 현재 좌표다
+    const pm = parseModule(m.file, prev);
+    baseSpecs = new Set();
+    for (const inv of pm.invariants) {
+      if (/\(폐기/.test(inv)) continue;
+      const id = inv.match(/^- (I\d+)\./)[1];
+      const evidence = inv.match(/근거:\s*([^)]*)\)/)?.[1] ?? '';
+      for (const ref of evidenceRefs(pm, evidence)) baseSpecs.add(`${id}|${ref.file}|${ref.spec}`);
+    }
+  }
   const hit = new Map(); // file → [id]
   for (const inv of m.invariants) {
     if (/\(폐기/.test(inv)) continue;
@@ -307,7 +346,15 @@ for (const m of modules) {
     const evidence = inv.match(/근거:\s*([^)]*)\)/)?.[1] ?? '';
     for (const ref of evidenceRefs(m, evidence)) {
       if (!changedSet.has(ref.file)) continue;
-      if (ownerOf(ref.file) === m) continue; // 그건 R1 이 이미 본다
+      // (1) 줄 밀림. 줄번호 없는 인용은 줄에 대해 아무 주장도 하지 않으므로 제외한다
+      if (ref.spec && (baseSpecs === null || baseSpecs.has(`${id}|${ref.file}|${ref.spec}`))) {
+        const moved = ref.spec.match(/\d+/g).map(Number)
+          .map((n) => [n, shiftAbove(ref.file, n)]).filter(([, s]) => s !== 0);
+        if (moved.length)
+          report(lvl(m), slug, 'R11', `${id} 근거 ${ref.file}:${ref.spec} 의 인용 줄 위쪽이 바뀌었다 — ${moved.map(([n, s]) => `${n}→${n + s}`).join(', ')} 인지 확인`);
+      }
+      // (2) 계약서 미변경 + 소유 밖
+      if (docChanged || ownerOf(ref.file) === m) continue; // 소유 안은 R1 이 이미 본다
       hit.set(ref.file, [...(hit.get(ref.file) ?? []), id]);
     }
   }
