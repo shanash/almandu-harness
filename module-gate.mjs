@@ -215,7 +215,11 @@ for (const m of modules) {
     // R12 근거 경로는 리포 루트 기준으로 적는다 (v1 규칙). 상대 경로는 해석은 되지만 기준이 흔들린다
     for (const [, p] of evidence.matchAll(/([\w.\-\/]+\.[A-Za-z]+):\d+/g)) {
       const resolved = resolveEvidencePath(m, p);
-      if (resolved && resolved !== p) {
+      // 해석 실패는 "기준이 다름" 과 다른 사고다 — 정정할 대상이 없고, evidenceRefs 가 버리므로
+      // R6·R8·R11 도 그 인용을 못 본다. 침묵하면 틀린 경로가 계약서에 눌러앉는다
+      if (!resolved)
+        report('WARN', slug, 'R12', `${id} 근거 경로 "${p}" 가 어디로도 해석되지 않음 — 파일이 없거나 경로가 틀렸다. R11 도 이 파일을 추적하지 못한다`);
+      else if (resolved !== p) {
         if (fix) fixQueue.set(m.file, [...(fixQueue.get(m.file) ?? []), p]);
         else report('WARN', slug, 'R12', `${id} 근거 경로 "${p}" 가 리포 루트 기준이 아님 → "${resolved}"`);
       }

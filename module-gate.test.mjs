@@ -272,3 +272,31 @@ test('--staged 는 인덱스만 본다', (t) => {
   r.git('add alpha/a.cs');
   assert.equal(gate(r.dir, '--staged').code, 1);      // 스테이지하면 본다
 });
+
+test('R12 는 어디로도 해석되지 않는 근거 경로를 경고한다', (t) => {
+  // 해석 실패는 "리포 루트 기준이 아님" 과 다른 사고다 — 정정할 곳이 없고, 그 파일을
+  // R11 도 추적하지 못한다. 침묵하면 틀린 경로가 계약서에 그대로 눌러앉는다
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. 없는 파일에 기댄다 (근거: nowhere/missing.cs:12) [grep]'],
+  });
+  r.commit();
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R12'), out);
+  assert.match(out, /해석되지 않/);
+});
+
+test('R12 는 해석되지만 기준이 다른 경로와 해석 실패를 구분해 말한다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. 제 파일에 기댄다 (근거: a.cs:1) [grep]'],   // alpha/a.cs 로 해석된다
+  });
+  write(r.dir, 'alpha/a.cs', 'class A {}\n');
+  r.commit();
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R12'), out);
+  assert.match(out, /리포 루트 기준이 아님/);
+  assert.ok(!/해석되지 않/.test(out), out);
+});
