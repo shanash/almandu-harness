@@ -4,6 +4,7 @@
 //       node .harness/module-gate.mjs --staged   (pre-commit)
 //       node .harness/module-gate.mjs --base origin/main   (CI)
 //       node .harness/module-gate.mjs --fix      (R12 근거 경로를 리포 루트 기준으로 자동 정정)
+//       node .harness/module-gate.mjs --audit    (diff 무관: 인용 줄이 실물을 가리키는지 전수 대조)
 // 종료 코드: FAIL 1개 이상이면 1
 import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -12,6 +13,7 @@ import { join, relative, dirname } from 'node:path';
 const args = process.argv.slice(2);
 const staged = args.includes('--staged');
 const fix = args.includes('--fix');
+const audit = args.includes('--audit');
 const baseIdx = args.indexOf('--base');
 const base = baseIdx >= 0 ? args[baseIdx + 1] : 'HEAD';
 const MAX_LINES = 80;
@@ -218,6 +220,52 @@ const lvl = (m) => (strict(m) ? 'FAIL' : 'WARN');
 const evidenceIndex = new Map(); // "file:line" → { mod, id }  (R8)
 const fixQueue = new Map();      // MODULE.md → [정정할 경로]   (R12 --fix)
 let countClaims = 0;             // R13 한 실행의 grep 예산
+
+// ---------- --audit: 인용 줄 전수 감사 ----------
+// R11(b) 는 한 diff 안의 hunk 만 본다 — 여러 커밋에 걸쳐 조금씩 밀린 인용은 각 커밋에서 0 줄이라
+// 조용하고, 인용을 고치지 않은 채 계약서를 다시 손대면 base 판본과 대조할 근거가 사라진다.
+// 이 모드는 diff 를 아예 보지 않고 "지금 그 줄에 무엇이 있나" 만 묻는다: 파일 끝을 넘었거나
+// 인용 범위가 통째로 빈 줄·중괄호뿐이면 그 인용은 아무것도 주장하지 못한다.
+// 주석 줄은 내용이다 — 여러 계약서가 "HARD INVARIANT" 주석을 근거로 인용한다.
+if (audit) {
+  const NOTHING = /^[\s{}()\[\];,]*$/;
+  const findings = [];
+  const lineCache = new Map();
+  const linesOf = (f) => {
+    if (!lineCache.has(f)) {
+      try { lineCache.set(f, readFileSync(join(root, f), 'utf8').replace(/\r\n/g, '\n').split('\n')); }
+      catch { lineCache.set(f, null); }
+    }
+    return lineCache.get(f);
+  };
+  for (const m of modules) {
+    const slug = m.fm.module ?? m.file;
+    for (const inv of m.invariants) {
+      if (/\(폐기/.test(inv)) continue;
+      const id = inv.match(/^- (I\d+)\./)?.[1] ?? '?';
+      const evidence = inv.match(/근거:\s*([^)]*)\)/)?.[1] ?? '';
+      for (const ref of evidenceRefs(m, evidence)) {
+        if (!ref.spec) continue;              // 줄에 대해 아무 주장도 하지 않는 인용
+        const lines = linesOf(ref.file);
+        if (!lines) continue;                 // 읽히지 않는 파일은 R12 가 본다
+        for (const part of ref.spec.split(',')) {
+          const [a, b] = part.includes('-') ? part.split('-').map(Number) : [Number(part), Number(part)];
+          if (a > lines.length)
+            findings.push(`${slug.padEnd(16)} ${id.padEnd(4)} ${ref.file}:${part} — 파일은 ${lines.length}줄뿐이다`);
+          else if (lines.slice(a - 1, b).every((l) => NOTHING.test(l)))
+            findings.push(`${slug.padEnd(16)} ${id.padEnd(4)} ${ref.file}:${part} — 빈 줄·중괄호뿐이라 아무것도 주장하지 못한다`);
+        }
+      }
+    }
+  }
+  if (!findings.length) {
+    console.log(`module-gate --audit: OK (${modules.length} modules, 인용 줄 전수 대조)`);
+    process.exit(0);
+  }
+  for (const f of findings) console.log(`AUDIT  ${f}`);
+  console.log(`\nmodule-gate --audit: ${findings.length}건 — 문장과 대조해 밀린 줄번호를 옮겨라 (계약 문장은 대개 그대로다)`);
+  process.exit(1);
+}
 
 for (const m of modules) {
   const slug = m.fm.module ?? m.file;

@@ -329,6 +329,55 @@ test('pytest 노드 ID(`파일.py::테스트명`) 인용도 R11 이 추적한다
   assert.ok(has(out, 'WARN', 'alpha', 'R11'), out);
 });
 
+test('--audit 는 중괄호·빈 줄을 가리키는 인용을 잡는다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: [
+      '- I1. 아무것도 가리키지 않는다 (근거: alpha/a.cs:3) [grep]',
+      '- I2. 실물을 가리킨다 (근거: alpha/a.cs:2) [grep]',
+    ],
+  });
+  write(r.dir, 'alpha/a.cs', 'class A\n{\n}\n');   // :2 는 여는 중괄호, :3 은 닫는 중괄호
+  r.commit();
+  const audit = gate(r.dir, '--audit');
+  assert.ok(audit.out.includes('alpha/a.cs:3'), audit.out);
+  assert.equal(audit.code, 1, audit.out);
+  // 평소 판정에는 섞이지 않는다 — 전수 감사는 별도 수단이다
+  const plain = gate(r.dir);
+  assert.ok(!plain.out.includes('AUDIT'), plain.out);
+  assert.equal(plain.code, 0, plain.out);
+});
+
+test('--audit 는 파일 끝을 넘는 인용을 잡고, 실물 줄은 조용하다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: [
+      '- I1. 없는 줄을 가리킨다 (근거: alpha/a.cs:99) [grep]',
+      '- I2. 실물을 가리킨다 (근거: alpha/a.cs:1) [grep]',
+    ],
+  });
+  write(r.dir, 'alpha/a.cs', 'class A { }\n');
+  r.commit();
+  const { out, code } = gate(r.dir, '--audit');
+  assert.ok(out.includes('alpha/a.cs:99'), out);
+  assert.ok(!out.includes('alpha/a.cs:1 '), out);
+  assert.equal(code, 1, out);
+});
+
+test('--audit 는 실물을 가리키는 계약서에 조용하고 0 으로 끝난다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. 실물을 가리킨다 (근거: alpha/a.cs:1-2) [grep]'],
+  });
+  write(r.dir, 'alpha/a.cs', 'class A\n{ int x; }\n');
+  r.commit();
+  const { out, code } = gate(r.dir, '--audit');
+  assert.equal(code, 0, out);
+});
+
 test('확장자 없는 근거 파일도 인용이다 — R11 이 추적한다', (t) => {
   const r = newRepo(t);
   putModule(r.dir, {

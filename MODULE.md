@@ -12,22 +12,22 @@ MODULE.md 계약 체계 자체를 소유한다 — 스키마(`MODULE-schema-v1.m
 프로젝트 고유 규칙은 담지 않는다 — 각 디렉토리의 MODULE.md·CLAUDE.md 는 그 디렉토리에 남고, 커밋을 실제로 막는 훅은 [[tools]] 에 있다. 이 디렉토리는 판정만 하고 차단은 종료 코드로 넘긴다.
 
 ## 진입점
-- `node .harness/module-gate.mjs [--staged|--base <ref>|--fix]` — .harness/module-gate.mjs:445,449 (판정 결과를 종료 코드로 낸다)
-- `node --test .harness/module-gate.test.mjs` — .harness/module-gate.test.mjs:16 (게이트의 회귀 테스트 35개)
+- `node .harness/module-gate.mjs [--staged|--base <ref>|--fix|--audit]` — .harness/module-gate.mjs:493,497 (판정 결과를 종료 코드로 낸다)
+- `node --test .harness/module-gate.test.mjs` — .harness/module-gate.test.mjs:16 (게이트의 회귀 테스트 38개)
 - `.harness/MODULE-schema-v1.md` — 사람과 에이전트가 계약을 쓸 때 읽는 규칙서
 
 ## 의존
 ### in (이 모듈이 쓰는 것)
-- 없음. node 표준 라이브러리 세 모듈과 `git` CLI 만 쓴다 — 설치할 의존이 없어 어느 클론에서나 그대로 돈다 (.harness/module-gate.mjs:8-10)
+- 없음. node 표준 라이브러리 세 모듈과 `git` CLI 만 쓴다 — 설치할 의존이 없어 어느 클론에서나 그대로 돈다 (.harness/module-gate.mjs:9-11)
 ### out (이 모듈을 쓰는 것)
 - [[tools]] — pre-commit 이 `node .harness/module-gate.mjs --staged` 를 돌리고 그 종료 코드로 커밋을 막는다 (tools/git-hooks/pre-commit:95-106)
 
 ## 불변식
-- I1. 판정 수준은 `status` 로만 갈린다 — `active` 는 FAIL, 그 외는 WARN 으로 강등된다. 예외는 R3 의 모듈 후보 경고 하나로 언제나 WARN 이다 (근거: .harness/module-gate.mjs:216-217,260-262, .harness/module-gate.test.mjs:126,489) [테스트]
-- I2. 차단 수단은 종료 코드뿐이다 — FAIL 이 하나라도 있으면 1, 없으면 0 이고 WARN 은 0 이다 (근거: .harness/module-gate.mjs:445,449, tools/git-hooks/pre-commit:95-106) [grep]
+- I1. 판정 수준은 `status` 로만 갈린다 — `active` 는 FAIL, 그 외는 WARN 으로 강등된다. 예외는 R3 의 모듈 후보 경고 하나로 언제나 WARN 이다 (근거: .harness/module-gate.mjs:218-219,308-310, .harness/module-gate.test.mjs:126,538) [테스트]
+- I2. 차단 수단은 종료 코드뿐이다 — FAIL 이 하나라도 있으면 1, 없으면 0 이고 WARN 은 0 이다 (근거: .harness/module-gate.mjs:493,497, tools/git-hooks/pre-commit:95-106) [grep]
 - I3. 회귀 테스트는 이 리포의 계약서를 입력으로 쓰지 않는다 — 임시 git 저장소에 fixture 를 세워 돌리므로 계약서가 바뀌어도 테스트는 그대로다 (근거: .harness/module-gate.test.mjs:5-7,16) [테스트]
-- I4. 게이트는 외부 의존 없이 돈다 — import 는 node 표준 세 줄이고 나머지는 `git` 서브프로세스다 (근거: .harness/module-gate.mjs:8-10, 재현: .harness/module-gate.mjs 에서 `from 'node:` 3건) [grep]
-- I5. 게이트는 자기 판단을 파일에 쓰지 않는다 — 유일한 쓰기는 `--fix` 의 근거 경로 정정이고 그것도 `근거:` 가 있는 줄만 건드린다 (근거: .harness/module-gate.mjs:427-431,438) [리뷰]
+- I4. 게이트는 외부 의존 없이 돈다 — import 는 node 표준 세 줄이고 나머지는 `git` 서브프로세스다 (근거: .harness/module-gate.mjs:9-11, 재현: .harness/module-gate.mjs 에서 `from 'node:` 3건) [grep]
+- I5. 게이트는 자기 판단을 파일에 쓰지 않는다 — 유일한 쓰기는 `--fix` 의 근거 경로 정정이고 그것도 `근거:` 가 있는 줄만 건드린다 (근거: .harness/module-gate.mjs:475-479,486) [리뷰]
 
 ## 미결
 - 분리하면 `[[harness]]` 슬러그가 리포 밖을 가리킨다. tools/MODULE.md 가 이미 `in [[harness]]` 를 선언하는데 이 디렉토리가 별도 저장소로 나가면 그 대상이 이 리포에 없고, R12 는 근거 경로를 리포 루트 기준으로 강제한다 — 스키마는 리포 밖 모듈을 계약서가 어떻게 인용하는지 아무 말도 하지 않는다. 필드를 더하지 않고 푸는 방법이 정해져야 분리가 된다 (3개월 동결)
@@ -38,5 +38,6 @@ MODULE.md 계약 체계 자체를 소유한다 — 스키마(`MODULE-schema-v1.m
 - `MODULE-schema-v0.md` 는 히스토리용 보관이고 어느 규칙도 이 파일을 읽지 않는다 — 분리할 때 함께 옮길지 버릴지 미결
 
 ## 이력
+- 2026-09-12 `--audit` 를 만든다 — diff 를 보지 않고 인용 줄이 지금 무엇을 담고 있는지만 전수로 묻는다 (파일 끝을 넘었는지, 범위가 통째로 빈 줄·중괄호뿐인지). R11(b) 가 한 diff 의 hunk 만 보는 한계를 덮는 별도 수단이고, 평소 판정에는 섞이지 않는다. 처음 돌리자 이 리포에서 3건이 나왔다 — 이 계약서 자신의 둘과 engine I2 의 `LeScript.cs:252`(내 작업과 무관하게 전부터 밀려 있던 것)
 - 2026-09-12 확장자 없는 근거 인용을 R6·R8·R11·R12 의 눈에 들인다. 경로 조각이 둘 이상이고 리포 루트 기준으로 실재하는 **파일**인 토큰만 줍는다 — 디렉토리와 메뉴 경로(`KoD/Addressables/Setup Infra`)는 떨어지고, 확장자 없는 토큰의 해석 실패는 조용하다(파일 인용이라는 표시가 없으므로 R12 로 고발하지 않는다). tools I8 의 `tools/git-hooks/pre-commit` 과 이 계약서 I2 의 같은 인용이 처음으로 추적된다. 규칙을 켜자 R11(b) 가 이 커밋의 게이트 수정으로 밀린 자기 인용 4건을 잡았고 그 줄번호를 같은 커밋에서 고쳤다
 - 2026-09-12 최초 작성 (Claude Code 초안, 검토 전). 스키마 미결의 결정 줄("`책임` 칸에 `observations/` 의 위치를 적는다")을 이 파일이 이행했으므로 그쪽 줄은 삭제됐다

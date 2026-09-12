@@ -19,6 +19,7 @@ node .harness/module-gate.mjs               # 작업 트리 vs HEAD
 node .harness/module-gate.mjs --staged      # 인덱스만
 node .harness/module-gate.mjs --base origin/main
 node .harness/module-gate.mjs --fix         # R12 근거 경로 자동 정정
+node .harness/module-gate.mjs --audit       # diff 무관: 인용 줄이 실물을 가리키는지 전수 대조
 node --test .harness/module-gate.test.mjs   # 회귀 테스트 12개, ~9초
 ```
 
