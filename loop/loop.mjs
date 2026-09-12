@@ -8,8 +8,9 @@
 // 종료 코드: 게이트를 부르는 명령은 게이트의 종료 코드를 그대로 낸다 — 루프는 판정하지 않는다.
 //           루프 자신의 거부(세션 없음, scope 밖 경로 등)는 2 다.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
@@ -69,11 +70,41 @@ const bundle = () => [...new Set([
 // ---------- 세션 ----------
 const readSession = () => (existsSync(SESSION) ? JSON.parse(readFileSync(SESSION, 'utf8')) : null);
 
+// 새 게이트를 옛 트리(세션의 HEAD)에 대고 기준선을 다시 잰다. 임시 worktree 는 OS 임시
+// 디렉토리에 뜨고 `.git/worktrees/` 에 등록만 남으므로 리포의 작업 트리는 그대로다.
+// scope 시점에 이미 더러웠던 변경은 HEAD 에 없어 재측정에 안 들어간다 — 그만큼 신규로
+// 과보고하고, 과소보고하지 않는다
+function remeasure(sha) {
+  const dir = mkdtempSync(join(tmpdir(), 'module-loop-base-'));
+  const wt = join(dir, 'head');
+  let baseline = null;
+  let err = null;
+  try {
+    run('git', ['worktree', 'add', '--detach', '--quiet', wt, sha], { cwd: root });
+    let out = '';
+    try { out = run(process.execPath, [GATE, '--json'], { cwd: wt }); }
+    catch (e) { if (e.status == null) throw e; out = e.stdout ?? ''; }
+    baseline = JSON.parse(out.trim().split('\n').pop()).results.map(pair);
+  } catch (e) { err = e; }
+  // die 는 즉시 종료하므로 정리를 finally 에 두지 않는다 — 임시 worktree 등록이 남는다
+  try { run('git', ['worktree', 'remove', '--force', wt], { cwd: root }); } catch { /* 이미 없다 */ }
+  rmSync(dir, { recursive: true, force: true });
+  if (err) die(`기준선을 다시 재지 못했다 (${String(err.message).split('\n')[0]}) — \`abort\` 후 다시 \`scope\``);
+  return baseline;
+}
+
 function requireSession() {
   const s = readSession();
   if (!s) die('세션이 없다 — `scope` 를 먼저 돌려라. 계약을 열지 않은 변경은 이 루프를 지나가지 못한다');
   if (s.head !== head()) die(`기준선은 HEAD ${s.head.slice(0, 8)} 에서 쟀는데 지금은 ${head().slice(0, 8)} 이다 — \`abort\` 후 다시 \`scope\``);
-  if (s.gate !== GATE_HASH) die('게이트가 바뀌었다 — 기준선은 그 규칙으로 잰 것이라 더는 참이 아니다. `abort` 후 다시 `scope`');
+  // 옛 규칙으로 잰 기준선과 새 규칙의 판정은 차집합을 낼 수 없다. 거부하면 이 루프의 첫 용도
+  // (게이트를 고치는 커밋)가 자기 루프를 못 쓰므로, 버리는 대신 새 게이트로 다시 잰다
+  if (s.gate !== GATE_HASH) {
+    console.error('loop: 게이트가 바뀌었다 — HEAD 의 임시 worktree 에서 새 게이트로 기준선을 다시 잰다');
+    s.baseline = remeasure(s.head);
+    s.gate = GATE_HASH;
+    writeFileSync(SESSION, `${JSON.stringify(s, null, 2)}\n`);
+  }
   return s;
 }
 
@@ -224,12 +255,14 @@ if (cmd === 'commit') {
 if (cmd === 'status') {
   const s = readSession();
   if (!s) { console.log('세션 없음 — `scope` 로 시작한다'); process.exit(0); }
-  const stale = s.head !== head() ? 'HEAD 가 움직였다' : s.gate !== GATE_HASH ? '게이트가 바뀌었다' : null;
+  // status 는 세션을 건드리지 않는다 — 재측정은 reconcile·commit 이 할 일이므로 여기서는 알리기만 한다
+  const stale = s.head !== head() ? 'HEAD 가 움직였다 — `abort` 후 다시 `scope`'
+    : s.gate !== GATE_HASH ? '게이트가 바뀌었다 — 다음 reconcile 이 기준선을 다시 잰다' : null;
   if (has('--json')) { process.stdout.write(`${JSON.stringify({ schema: 1, mode: 'status', stale, ...s })}\n`); process.exit(0); }
   console.log(`세션 ${s.started} (HEAD ${s.head.slice(0, 8)}, 게이트 ${s.gate})`);
   console.log(`  경로 ${s.paths.length}개, 적재된 계약 ${s.contracts.length}개, 기준선 ${s.baseline.length}건`);
   for (const c of s.contracts) console.log(`    ${c}`);
-  if (stale) console.log(`  ${stale} — 이 세션은 더는 쓰이지 않는다. \`abort\` 후 다시 \`scope\``);
+  if (stale) console.log(`  ${stale}`);
   process.exit(0);
 }
 

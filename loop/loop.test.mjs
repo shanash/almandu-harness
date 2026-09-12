@@ -8,7 +8,7 @@
 // 진입점이지 라이브러리가 아니고, 가져오면 loop 가 조상의 테스트에 묶인다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, execSync } from 'node:child_process';
+import { spawnSync, execSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, appendFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -65,12 +65,11 @@ function newRepo(t, { childStatus = 'draft' } = {}) {
   return { dir, git, write: (rel, text) => write(dir, rel, text) };
 }
 
+// stdout·stderr 를 함께 본다 — 루프는 판정 아닌 알림(기준선 재측정 등)을 stderr 로 보내고,
+// 그래야 `--json` 의 stdout 이 JSON 만 담는다
 function loop(dir, args, env = {}) {
-  try {
-    return { code: 0, out: execFileSync('node', [LOOP, ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, ...env } }) };
-  } catch (e) {
-    return { code: e.status, out: `${e.stdout ?? ''}${e.stderr ?? ''}` };
-  }
+  const r = spawnSync('node', [LOOP, ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, ...env } });
+  return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
 
 const sessionPath = (dir) => join(dir, '.git', 'module-loop', 'session.json');
@@ -125,16 +124,39 @@ test('HEAD 가 움직이면 세션을 거부한다', (t) => {
   assert.match(got.out, /HEAD/);
 });
 
-test('게이트가 바뀌면 세션을 거부한다 — 기준선은 그 규칙으로 잰 것이다', (t) => {
+test('게이트가 바뀌면 거부하지 않고 새 게이트로 기준선을 다시 잰다', (t) => {
   const r = newRepo(t);
-  const copy = join(r.dir, 'gate-copy.mjs');
+  // 게이트 사본은 리포 밖에 둔다 — 안에 두면 그 .mjs 가 R1 을 울려 판정에 섞인다
+  const gdir = mkdtempSync(join(tmpdir(), 'module-loop-gate-'));
+  t.after(() => rmSync(gdir, { recursive: true, force: true }));
+  const copy = join(gdir, 'gate-copy.mjs');
+  copyFileSync(GATE, copy);
+  const env = { MODULE_GATE: copy };
+  r.write('child/b.mjs', 'export const b = 2;\n');   // scope 전부터 서 있는 R1
+  loop(r.dir, ['scope', 'child/b.mjs'], env);
+  assert.equal(session(r.dir).baseline.length, 1);
+  appendFileSync(copy, '// 규칙이 바뀐 척\n');
+  const got = loop(r.dir, ['reconcile'], env);
+  assert.equal(got.code, 0, got.out);
+  assert.match(got.out, /기준선을 다시 잰다/);
+  // 재측정은 HEAD 의 트리를 본다. 거기엔 그 변경이 없으므로 R1 이 신규로 올라온다
+  assert.match(got.out, /신규 1건/);
+  assert.notEqual(session(r.dir).gate, undefined);
+});
+
+test('기준선을 다시 재도 리포의 작업 트리는 그대로다', (t) => {
+  const r = newRepo(t);
+  const gdir = mkdtempSync(join(tmpdir(), 'module-loop-gate-'));
+  t.after(() => rmSync(gdir, { recursive: true, force: true }));
+  const copy = join(gdir, 'gate-copy.mjs');
   copyFileSync(GATE, copy);
   const env = { MODULE_GATE: copy };
   loop(r.dir, ['scope', 'child/b.mjs'], env);
   appendFileSync(copy, '// 규칙이 바뀐 척\n');
-  const got = loop(r.dir, ['reconcile'], env);
-  assert.equal(got.code, 2);
-  assert.match(got.out, /게이트가 바뀌었다/);
+  loop(r.dir, ['reconcile'], env);
+  assert.equal(dirty(r.dir), '');
+  // 임시 worktree 등록도 남기지 않는다
+  assert.equal(execSync('git worktree list', { cwd: r.dir, encoding: 'utf8' }).trim().split('\n').length, 1);
 });
 
 test('reconcile 은 기준선에 있던 경고를 신규로 세지 않는다', (t) => {
