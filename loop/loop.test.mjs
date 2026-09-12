@@ -304,3 +304,97 @@ test('review 는 변경과 무관한 불변식을 내지 않는다', (t) => {
   // other/MODULE.md 의 I1 은 근거가 "없음" 이라 어느 파일도 인용하지 않는다
   assert.deepEqual([...new Set(j.invariants.map((i) => i.module))], ['child']);
 });
+
+// ---------- 리뷰 패킷 (DESIGN-review.md 2절) ----------
+
+const packetPath = (dir) => join(dir, '.git', 'module-loop', 'review-packet.json');
+const packet = (dir) => JSON.parse(readFileSync(packetPath(dir), 'utf8'));
+
+test('패킷은 같은 트리에서 두 번 만들면 같은 해시다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  const first = loop(r.dir, ['review', '--packet', '--json']);
+  assert.equal(first.code, 0, first.out);
+  const a = JSON.parse(first.out.trim().split('\n').pop());
+  const b = JSON.parse(loop(r.dir, ['review', '--packet', '--json']).out.trim().split('\n').pop());
+  assert.equal(a.hash, b.hash);
+  assert.equal(a.hash.length, 64);
+  assert.deepEqual(a.packet.session, { head: session(r.dir).head, gate_hash: session(r.dir).gate });
+  assert.deepEqual(a.packet.scope, ['child', 'root']);
+  assert.deepEqual(a.packet.diff.owners, { 'child/b.mjs': 'child' });
+});
+
+test('봉인이 깨진 세션에서는 패킷을 만들지 않는다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  r.git('add -A');
+  r.git('commit -q -m moved');
+  const got = loop(r.dir, ['review', '--packet']);
+  assert.equal(got.code, 2);
+  assert.match(got.out, /HEAD/);
+  assert.equal(existsSync(packetPath(r.dir)), false);
+});
+
+test('게이트가 FAIL 이면 패킷을 만들지 않는다 — 기계가 거부한 것에 판단을 붙이지 않는다', (t) => {
+  const r = newRepo(t, { childStatus: 'active' });
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  r.write('child/b.mjs', 'export const b = 2;\n');
+  const got = loop(r.dir, ['review', '--packet']);
+  assert.equal(got.code, 1);
+  assert.match(got.out, /FAIL/);
+  assert.equal(existsSync(packetPath(r.dir)), false);
+});
+
+test('미결·이력만 바뀐 MODULE.md 는 contract_diff 가 빈 문자열이다', (t) => {
+  const r = newRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  appendFileSync(join(r.dir, 'child/MODULE.md'), '- 2026-01-02 이력 한 줄\n');
+  assert.equal(loop(r.dir, ['review', '--packet']).code, 0);
+  const p = packet(r.dir);
+  assert.deepEqual(p.diff.contract, ['child/MODULE.md']);
+  assert.deepEqual(p.diff.code, []);
+  assert.equal(p.contract_diff, '');
+});
+
+test('불변식이 바뀌면 contract_diff 에 그 줄이 들어간다', (t) => {
+  const r = newRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  write(r.dir, 'child/MODULE.md', moduleDoc({ slug: 'child', path: 'child', invariants: [
+    '- I1. 이제는 무엇인가를 약속한다 (근거: child/b.mjs:1) [리뷰]',
+  ] }));
+  assert.equal(loop(r.dir, ['review', '--packet']).code, 0);
+  const p = packet(r.dir);
+  assert.match(p.contract_diff, /^diff --git a\/child\/MODULE\.md b\/child\/MODULE\.md$/m);
+  assert.match(p.contract_diff, /^\+- I1\. 이제는 무엇인가를 약속한다/m);
+  assert.doesNotMatch(p.contract_diff, /module-loop-packet-/);   // 임시 경로가 새면 해시가 흔들린다
+});
+
+test('근거 파일이 diff 에 없는 [리뷰] 불변식은 패킷에 들어가지 않는다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs', 'other/c.mjs']);
+  loop(r.dir, ['review', '--packet']);
+  // child I3 만 [리뷰] 이고 그 근거 child/b.mjs 가 이번 diff 에 있다
+  assert.deepEqual(packet(r.dir).review_invariants.map((i) => `${i.module}/${i.id}`), ['child/I3']);
+  assert.equal(packet(r.dir).review_invariants[0].touched, true);
+  // b.mjs 를 되돌리고 다른 파일만 고치면 그 불변식은 빠진다
+  r.write('child/b.mjs', 'export const b = 1;\nexport const c = 2;\nconst d = 3;\n');
+  r.write('other/c.mjs', 'export const c = 2;\n');
+  loop(r.dir, ['review', '--packet']);
+  assert.deepEqual(packet(r.dir).review_invariants, []);
+  assert.deepEqual(packet(r.dir).diff.code, ['other/c.mjs']);
+});
+
+test('active 계약이 묶음에 있으면 패킷도 --contract 한 줄을 요구한다', (t) => {
+  const r = newRepo(t, { childStatus: 'active' });
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  appendFileSync(join(r.dir, 'child/MODULE.md'), '- 2026-01-02 이력 한 줄\n');
+  const refused = loop(r.dir, ['review', '--packet']);
+  assert.equal(refused.code, 2);
+  assert.match(refused.out, /--contract/);
+  const ok = loop(r.dir, ['review', '--packet', '--contract', '이력 한 줄을 더했다']);
+  assert.equal(ok.code, 0, ok.out);
+  assert.equal(packet(r.dir).contract_statement, '이력 한 줄을 더했다');
+  // 세션이 문장을 들고 있으므로 다시 만들 때 플래그를 되풀이하지 않아도 된다
+  assert.equal(loop(r.dir, ['review', '--packet']).code, 0);
+  assert.equal(packet(r.dir).contract_statement, '이력 한 줄을 더했다');
+});

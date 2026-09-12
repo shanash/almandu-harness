@@ -4,6 +4,7 @@
 //       node loop/loop.mjs status
 //       node loop/loop.mjs reconcile                          (재판정 + 기준선 차집합)
 //       node loop/loop.mjs review                             (게이트가 정한 배치대로 리뷰어를 돌린다)
+//       node loop/loop.mjs review --packet [--contract "<한 줄>"]  (페르소나에게 줄 입력을 만든다)
 //       node loop/loop.mjs commit -m "<제목>" [-m <본문>...] [--contract "<한 줄>"] [--dry-run]
 //       node loop/loop.mjs abort
 // 종료 코드: 게이트를 부르는 명령은 게이트의 종료 코드를 그대로 낸다 — 루프는 판정하지 않는다.
@@ -39,6 +40,8 @@ const gitZ = (...args) => run('git', args, { cwd: root }).split('\0').filter(Boo
 // 리포 안에 두면 그 파일이 곧 "승인된 경고 목록" 이 되고, observations/01 이 적은 대로 규칙이
 // 바뀌는 순간 거짓이 된다
 const SESSION = join(git('rev-parse', '--absolute-git-dir'), 'module-loop', 'session.json');
+// 패킷도 같은 자리에 산다 — 재생성 가능하고 커밋되지 않는다 (DESIGN-review.md 2절)
+const PACKET = join(dirname(SESSION), 'review-packet.json');
 const GATE_HASH = createHash('sha256').update(readFileSync(GATE)).digest('hex').slice(0, 12);
 const head = () => git('rev-parse', 'HEAD');
 
@@ -117,6 +120,62 @@ function invariantsOf(file) {
 }
 const isContract = (f) => f === 'MODULE.md' || f.endsWith('/MODULE.md');
 const isActive = (f) => existsSync(join(root, f)) && /^status:\s*active\s*$/m.test(readFileSync(join(root, f), 'utf8'));
+const slugOf = (f) => (existsSync(join(root, f))
+  ? readFileSync(join(root, f), 'utf8').match(/^module:\s*(.+?)\s*$/m)?.[1] ?? f : f);
+
+// ---------- 리뷰 패킷의 재료 ----------
+// 계약 섹션 목록의 출처는 게이트 하나다 — 여기 사본을 두면 게이트가 섹션을 늘릴 때
+// contract_diff 가 그 섹션을 조용히 빠뜨린다. 읽지 못하면 패킷을 만들지 않는다
+function contractSections() {
+  const m = readFileSync(GATE, 'utf8').match(/const CONTRACT_SECTIONS\s*=\s*\[([^\]]*)\]/);
+  if (!m) die('게이트에서 CONTRACT_SECTIONS 를 읽지 못했다 — 계약 섹션 목록의 출처는 게이트 하나다');
+  return m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+}
+
+// 계약서에서 계약 칸만 뽑는다. 미결·이력은 빼므로 그쪽만 바뀐 커밋의 contract_diff 는 빈 문자열이다 —
+// 리뷰가 묻는 것은 "이번에 무엇을 약속했나" 이고, 이력 한 줄은 약속이 아니다 (R2 와 같은 경계)
+const contractText = (text, sections) => sections.map((s) => {
+  const body = text.replace(/^﻿/, '').replace(/\r\n/g, '\n')
+    .match(new RegExp(`\\n## ${s}\\n([\\s\\S]*?)(?=\\n## |$)`));
+  return `## ${s}\n${(body ? body[1] : '').trim()}\n`;
+}).join('\n');
+
+// 계약 칸만 뽑아 base 판본과 대조한다. hunk 를 골라내지 않고 뽑은 텍스트끼리 비교하는 이유는
+// hunk 헤더가 어느 섹션에 속하는지 git 이 markdown 을 모르면 말해 주지 않기 때문이다
+function contractDiff(files) {
+  if (!files.length) return '';
+  const sections = contractSections();
+  const dir = mkdtempSync(join(tmpdir(), 'module-loop-packet-'));
+  const out = [];
+  try {
+    for (const f of files) {
+      let before = '';
+      try { before = run('git', ['show', `HEAD:${f}`], { cwd: root }); } catch { /* 새 계약서 */ }
+      const now = existsSync(join(root, f)) ? readFileSync(join(root, f), 'utf8') : '';
+      for (const [side, text] of [['base', before], ['work', now]]) {
+        const p = join(dir, side, f);
+        mkdirSync(dirname(p), { recursive: true });
+        writeFileSync(p, contractText(text, sections));
+      }
+      let d = '';
+      try { d = run('git', ['diff', '--no-index', '--unified=3', '--', `base/${f}`, `work/${f}`], { cwd: dir }); }
+      catch (e) { if (e.status !== 1) throw e; d = e.stdout ?? ''; }
+      if (!d.trim()) continue;
+      // 임시 디렉토리 이름이 패킷에 새면 같은 트리가 다른 해시를 낸다. 헤더를 리포 경로로 되돌린다
+      out.push(`${d.split('\n').filter((l) => !l.startsWith('index ')).map((l) =>
+        l.startsWith('diff --git ') ? `diff --git a/${f} b/${f}`
+          : l.startsWith('--- ') ? `--- a/${f}`
+            : l.startsWith('+++ ') ? `+++ b/${f}` : l).join('\n').trim()}\n`);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  return out.join('');
+}
+
+// 키 순서가 해시를 바꾸지 않게 정렬해 직렬화한다. 5b 의 review-result 가 이 해시로 패킷에 묶인다
+const stable = (v) => (Array.isArray(v) ? v.map(stable)
+  : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, stable(v[k])]))
+    : v);
+const packetHash = (p) => createHash('sha256').update(JSON.stringify(stable(p))).digest('hex');
 
 // ---------- scope ----------
 if (cmd === 'scope') {
@@ -196,6 +255,74 @@ if (cmd === 'reconcile') {
     for (const inv of invariantsOf(c)) console.log(`    ${inv.replace(/^- /, '')}`);
   }
   process.exit(code);
+}
+
+// ---------- review --packet ----------
+// 리뷰 단계의 **입력**만 만든다 (DESIGN-review.md 2절). 판단은 여기 없다 — 패킷은 호출자가
+// 페르소나에게 줄 재료이고, 답은 사람이나 서브에이전트가 낸다.
+// 세션 봉인을 그대로 상속한다: 봉인이 깨져 있으면 패킷을 만들지 않는다. 낡은 기준선으로 만든
+// 패킷은 "이번 변경" 이 무엇인지를 두고 거짓말한다.
+if (cmd === 'review' && has('--packet')) {
+  const s = requireSession();
+  const { code, data } = gateJson();
+  // 기계가 이미 거부한 것에 판단을 붙일 이유가 없다 (DESIGN-review.md 1절)
+  if (data.fail) {
+    console.error(`loop: 게이트가 ${data.fail} FAIL — 패킷을 만들지 않는다. reconcile 이 OK 여야 리뷰가 돈다`);
+    for (const r of data.results.filter((r) => r.level === 'FAIL')) console.error(`  ${fmt(r)}`);
+    process.exit(code);
+  }
+
+  const files = bundle();
+  if (!files.length) die('묶음이 비었다 — 리뷰할 변경이 없다');
+  const contractFiles = files.filter(isContract);
+  const codeFiles = files.filter((f) => !isContract(f));
+  const codeSet = new Set(codeFiles);
+
+  // 계약 대조자는 이 문장과 계약 diff 를 맞춰 본다. 문장이 없으면 그 질문이 성립하지 않으므로
+  // I6 이 커밋에서 요구하는 것과 같은 자리에서 같은 줄을 요구한다
+  const statement = value('--contract') ?? s.contract_statement ?? '';
+  const activeContracts = contractFiles.filter(isActive);
+  if (activeContracts.length && !statement)
+    die(`active 계약이 묶음에 있다 (${activeContracts.join(', ')}) — \`--contract "<무엇이 왜 바뀌었나>"\` 를 적어라`);
+  if (statement !== (s.contract_statement ?? '')) {
+    s.contract_statement = statement;
+    writeFileSync(SESSION, `${JSON.stringify(s, null, 2)}\n`);
+  }
+
+  const { data: owned } = gateJson('--scope', ...files);
+  const { data: scoped } = gateJson('--review');
+  // 읽지 않은 코드에 판단을 붙이면 추측이 된다 — 근거 파일을 이번 diff 가 건드린 것만 싣는다
+  const reviewInvariants = scoped.invariants
+    .filter((it) => it.tag === '리뷰' && it.evidence.some((e) => codeSet.has(e.split(':')[0])))
+    .map((it) => ({ module: it.module, id: it.id, text: it.text, evidence: it.evidence, touched: true }));
+
+  const packet = {
+    session: { head: s.head, gate_hash: s.gate },
+    scope: [...new Set(s.contracts.map(slugOf))],
+    diff: {
+      code: codeFiles,
+      contract: contractFiles,
+      owners: Object.fromEntries(owned.paths.map((p) => [p.path, p.owner])),
+    },
+    contract_statement: statement,
+    contract_diff: contractDiff(contractFiles),
+    review_invariants: reviewInvariants,
+  };
+  const hash = packetHash(packet);
+  mkdirSync(dirname(PACKET), { recursive: true });
+  writeFileSync(PACKET, `${JSON.stringify(packet, null, 2)}\n`);
+
+  if (has('--json')) {
+    process.stdout.write(`${JSON.stringify({ schema: 1, mode: 'packet', hash, packet })}\n`);
+    process.exit(0);
+  }
+  console.log(`패킷: .git/module-loop/review-packet.json  (sha256 ${hash.slice(0, 8)})`);
+  console.log(`  scope: ${packet.scope.join(', ') || '없음'}`);
+  console.log(`  코드 ${codeFiles.length}개, 계약 ${contractFiles.length}개 — 계약 diff ${packet.contract_diff ? '있음' : '없음 (미결·이력만 바뀌었다)'}`);
+  console.log(`  [리뷰] 불변식 ${reviewInvariants.length}개 — 판단이 필요한 자리다`);
+  for (const it of reviewInvariants) console.log(`    ${it.module} ${it.id} ${it.text}`);
+  console.log('\n→ 페르소나 셋에 이 패킷을 준다. 답은 이 루프가 만들지 않는다');
+  process.exit(0);
 }
 
 // ---------- review ----------
