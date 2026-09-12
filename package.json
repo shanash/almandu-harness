@@ -6,7 +6,7 @@
     "module-gate": "module-gate.mjs"
   },
   "scripts": {
-    "test": "node --test module-gate.test.mjs"
+    "test": "node --test module-gate.test.mjs loop/loop.test.mjs"
   },
   "files": [
     "module-gate.mjs",
