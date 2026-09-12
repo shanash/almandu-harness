@@ -274,6 +274,7 @@ v0.4.0 태그 후 `github:shanash/module-harness#v0.4.0` 으로 갱신. 12장 �
 
 ## 13. 미결
 
+- 결정: 비통과 verdict 를 커밋 후에도 보존한다 (예정 — 5e 종료 후). `loop commit` 이 trailer 에 answer 만 남기고 reason·evidence 를 `.git/module-loop/` 와 함께 버리므로 6절 승격 경로의 원료가 사라진다 (근거: `observations/05-review-field.md` 의 결함 메모 1)
 - 결정: 계약 대조자의 "판단불가" 비율이 높을 때 `contract_statement` 형식을 구조화할지 (예정 — 5e 관찰 후)
 - `review_invariants` 의 `touched` 를 파일 단위로 볼지 라인 범위까지 볼지 미정. 파일 단위로 시작
 - 서브에이전트가 근거 파일을 읽는 범위를 패킷이 제한할지, 자유롭게 읽게 둘지 미정. 자유로 시작하고 04 에서 판단
