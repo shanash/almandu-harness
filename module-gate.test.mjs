@@ -329,6 +329,19 @@ test('pytest 노드 ID(`파일.py::테스트명`) 인용도 R11 이 추적한다
   assert.ok(has(out, 'WARN', 'alpha', 'R11'), out);
 });
 
+test('R13 은 한 실행의 grep 예산을 넘으면 그 사실을 경고한다', (t) => {
+  const r = newRepo(t);
+  // 예산보다 확실히 많은 주장. 상수를 바꿔도 이 테스트는 그대로 유효해야 한다
+  const many = Array.from({ length: 70 }, (_, i) =>
+    `- I${i + 1}. 한 건이다 (근거: alpha/a.cs:1, 재현: alpha 에서 \`class A\` 1건) [grep]`);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', invariants: many });
+  write(r.dir, 'alpha/a.cs', 'class A { }\n');
+  r.commit();
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R13'), out);
+  assert.ok(out.includes('넘었다'), out);
+});
+
 test('--audit 는 중괄호·빈 줄을 가리키는 인용을 잡는다', (t) => {
   const r = newRepo(t);
   putModule(r.dir, {

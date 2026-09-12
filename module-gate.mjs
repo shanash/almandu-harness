@@ -28,8 +28,10 @@ const CONTRACT_SECTIONS = ['책임', '진입점', '의존', '불변식'];
 // R13 건수 주장. `재현: [<범위> 에서 ]`<고정 문자열>` <N>건` 을 적은 불변식만 검사한다 —
 // 옵트인이 아니면 기존 [grep] 불변식 전부가 한꺼번에 검사 대상이 된다
 const COUNT_RE = /재현:\s*(?:([\w.\-\/]+)\s*에서\s*)?`([^`]+)`\s*(\d+)건/g;
-// 커밋마다 도는 grep 의 상한. 각 grep 은 한 모듈 디렉토리(또는 적힌 경로)로 좁혀진다
-const MAX_COUNT_CLAIMS = 24;
+// 커밋마다 도는 grep 의 상한. 비용은 건수가 아니라 범위 폭이다 — 2026-09-12 실측으로
+// 모듈 디렉토리 범위는 25회 0.19s, `restored-project/Assets` 트리 범위는 25회 3.2s 다.
+// 그래서 상한은 넉넉히 두고 비용 통제는 "범위는 경로 하나" 규칙이 맡는다
+const MAX_COUNT_CLAIMS = 64;
 
 const root = execSync('git rev-parse --show-toplevel').toString().trim();
 const sh = (cmd) => execSync(cmd, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
