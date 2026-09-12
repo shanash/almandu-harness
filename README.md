@@ -31,7 +31,8 @@ npx module-gate --fix            # R12 근거 경로 자동 정정
 npx module-gate --audit          # diff 무관: 인용 줄이 실물을 가리키는지 전수 대조
 npx module-gate --json           # 같은 판정을 기계 판독 형태로 (stdout 전용)
 npx module-gate --scope <경로>... # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
-npm test                         # 회귀 테스트 52개, ~37초
+npx module-gate --review          # 판정 안 함: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그
+npm test                         # 회귀 테스트 73개, ~60초
 ```
 
 의존은 node 표준 라이브러리와 `git` CLI 뿐이다. 종료 코드로만 말한다 — FAIL 이 하나라도 있으면 1.

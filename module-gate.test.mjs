@@ -843,3 +843,78 @@ test('--scope 의 경로 목록은 다음 플래그에서 멈춘다', (t) => {
   assert.equal(code, 0, out);
   assert.equal(JSON.parse(out).paths.length, 1);
 });
+
+test('--review 는 판정하지 않는다 — FAIL 이 서 있어도 0 으로 끝난다', (t) => {
+  const r = twoModules(t, { alphaStatus: 'active' });
+  write(r.dir, 'alpha/a.cs', 'class A { int x; }\n');   // R1 FAIL 을 세운다
+  assert.equal(gate(r.dir).code, 1);
+  const { code, out } = gate(r.dir, '--review');
+  assert.equal(code, 0, out);
+});
+
+test('--review 는 변경된 파일을 근거로 인용하는 불변식만 낸다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', invariants: [
+    '- I1. a 를 약속한다 (근거: alpha/a.cs:1) [테스트]',
+    '- I2. b 를 약속한다 (근거: alpha/b.cs:1) [리뷰]',
+  ] });
+  write(r.dir, 'alpha/a.cs', 'class A {}\n');
+  write(r.dir, 'alpha/b.cs', 'class B {}\n');
+  r.commit();
+  write(r.dir, 'alpha/a.cs', 'class A { int x; }\n');
+  const { code, out } = gate(r.dir, '--review', '--json');
+  assert.equal(code, 0, out);
+  const j = JSON.parse(out);
+  assert.equal(j.mode, 'review');
+  assert.deepEqual(j.invariants.map((i) => i.id), ['I1']);
+  assert.equal(j.invariants[0].tag, '테스트');
+  assert.deepEqual(j.invariants[0].evidence, ['alpha/a.cs:1']);
+  assert.deepEqual(j.byTag, { 테스트: 1, grep: 0, 리뷰: 0, 없음: 0 });
+});
+
+test('--review 는 [grep] 불변식의 재현 명령을 함께 낸다 — 리뷰어가 다시 돌릴 것이다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', invariants: [
+    '- I1. class 는 하나다 (근거: alpha/a.cs:1, 재현: alpha 에서 `class ` 1건) [grep]',
+  ] });
+  write(r.dir, 'alpha/a.cs', 'class A {}\n');
+  r.commit();
+  write(r.dir, 'alpha/a.cs', 'class A { int x; }\n');
+  const j = JSON.parse(gate(r.dir, '--review', '--json').out);
+  assert.deepEqual(j.invariants[0].repro, [{ scope: 'alpha', pattern: 'class ', expect: 1 }]);
+});
+
+test('--review 는 묘비를 세지 않는다 — 규칙이 아니므로 리뷰할 것도 없다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', invariants: [
+    '- I1. (폐기 2026-01-01 — alpha/a.cs:1 에 있던 규칙, [[beta]] 로 이관)',
+    '- I2. a 를 약속한다 (근거: alpha/a.cs:1) [테스트]',
+  ] });
+  write(r.dir, 'alpha/a.cs', 'class A {}\n');
+  r.commit();
+  write(r.dir, 'alpha/a.cs', 'class A { int x; }\n');
+  const j = JSON.parse(gate(r.dir, '--review', '--json').out);
+  assert.deepEqual(j.invariants.map((i) => i.id), ['I2']);
+});
+
+test('--review 는 전부 [리뷰] 인 계약서를 세지만 막지는 않는다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', status: 'active', invariants: [
+    '- I1. 무언가 (근거: alpha/a.cs:1) [리뷰]',
+    '- I2. 다른 무언가 (근거: alpha/a.cs:2) [리뷰]',
+  ] });
+  write(r.dir, 'alpha/a.cs', 'class A {}\nclass B {}\n');
+  r.commit();
+  const { code, out } = gate(r.dir, '--review', '--json');
+  assert.equal(code, 0, out);                       // 판정 수단이 없다고 커밋을 막지 않는다
+  assert.deepEqual(JSON.parse(out).unjudgeable, ['alpha']);
+  assert.equal(gate(r.dir).code, 0);                // 평소 판정에도 섞이지 않는다
+});
+
+test('--review 는 불변식 하나뿐인 계약서를 판정 불가로 세지 않는다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', invariants: ['- I1. 무언가 (근거: alpha/a.cs:1) [리뷰]'] });
+  write(r.dir, 'alpha/a.cs', 'class A {}\n');
+  r.commit();
+  assert.deepEqual(JSON.parse(gate(r.dir, '--review', '--json').out).unjudgeable, []);
+});

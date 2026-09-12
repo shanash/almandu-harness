@@ -7,6 +7,7 @@
 //       npx module-gate --audit    (diff 무관: 인용 줄이 실물을 가리키는지 전수 대조)
 //       npx module-gate --json     (같은 판정을 기계 판독 형태로 — 종료 코드는 그대로다)
 //       npx module-gate --scope <경로>...  (판정하지 않는다: 그 경로를 고치려면 읽어야 할 계약)
+//       npx module-gate --review   (판정하지 않는다: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그)
 // 종료 코드: FAIL 1개 이상이면 1
 import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -16,6 +17,7 @@ const args = process.argv.slice(2);
 const staged = args.includes('--staged');
 const fix = args.includes('--fix');
 const audit = args.includes('--audit');
+const review = args.includes('--review');
 const json = args.includes('--json');
 // `--scope` 는 가변 인자다. 다음 플래그를 만나면 멈춘다 — 멈추지 않으면 `--scope a --base main`
 // 에서 `main` 을 경로로 주워 간다
@@ -28,7 +30,7 @@ const scopeArgs = (() => {
 })();
 const baseIdx = args.indexOf('--base');
 const base = baseIdx >= 0 ? args[baseIdx + 1] : 'HEAD';
-const mode = scopeArgs ? 'scope' : audit ? 'audit' : staged ? 'staged' : baseIdx >= 0 ? 'base' : 'worktree';
+const mode = scopeArgs ? 'scope' : review ? 'review' : audit ? 'audit' : staged ? 'staged' : baseIdx >= 0 ? 'base' : 'worktree';
 const MAX_LINES = 80;
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'Library', 'Temp', 'obj', 'Logs', 'builds']);
 // R1 이 "코드 변경"으로 보는 것. 모듈별로 frontmatter `watch: .cs,.shader` 로 덮어쓸 수 있다
@@ -341,6 +343,69 @@ if (audit) {
   for (const f of findings) console.log(`AUDIT  ${f.slug.padEnd(16)} ${f.id.padEnd(4)} ${f.at} — ${f.why}`);
   console.log(`\nmodule-gate --audit: ${findings.length}건 — 문장과 대조해 밀린 줄번호를 옮겨라 (계약 문장은 대개 그대로다)`);
   process.exit(1);
+}
+
+// ---------- --review: 이 diff 를 리뷰할 때 봐야 할 불변식 ----------
+// 판정하지 않는다 — `--scope` 와 같은 자리이고 종료 코드는 언제나 0 이다.
+// 리뷰 범위를 정하는 것은 diff 가 아니라 "diff 가 건드린 파일에 대해 계약서가 무엇을 약속했나" 이고,
+// 그 목록은 R11 이 이미 걷는다. 여기서는 판정 없이 같은 목록을 태그와 함께 낸다 (DESIGN.md 6절).
+// 태그가 리뷰어를 정한다: [테스트] 는 테스트를, [grep] 은 `재현:` 명령을 다시 돌리면 되고
+// [리뷰] 만 사람·에이전트의 판단이 필요하다 — 계약서가 스스로 "판정 수단이 없다" 고 적은 자리다
+if (review) {
+  const TAG_RE = /\[(테스트|grep|리뷰)\]/;
+  const alive = (m) => m.invariants.filter((inv) => !/\(폐기/.test(inv));
+  const items = [];
+  for (const m of modules) {
+    const slug = m.fm.module ?? m.file;
+    for (const inv of alive(m)) {
+      const id = inv.match(/^- (I\d+)\./)?.[1] ?? '?';
+      const evidence = inv.match(/근거:\s*([^)]*)\)/)?.[1] ?? '';
+      const touched = evidenceRefs(m, evidence).filter((r) => changedSet.has(r.file));
+      if (!touched.length) continue;
+      items.push({
+        module: slug, contract: m.file, id,
+        tag: inv.match(TAG_RE)?.[1] ?? null,
+        text: inv.replace(/^- I\d+\.\s*/, '').replace(/\s*\(근거:.*$/, ''),
+        evidence: touched.map((r) => (r.spec ? `${r.file}:${r.spec}` : r.file)),
+        // [grep] 리뷰어가 다시 돌릴 것. R13 은 커밋 경로라 예산에 걸려 멈추지만 리뷰는 안 걸린다
+        repro: [...inv.matchAll(COUNT_RE)].map(([, s, pattern, expect]) => ({ scope: s ?? m.dir, pattern, expect: Number(expect) })),
+      });
+    }
+  }
+  // 불변식이 둘 이상인데 전부 [리뷰] 인 계약서 — 스스로 판정 수단이 없다고 적은 계약서다.
+  // 규칙으로 만들지 않고 여기서만 센다 (DESIGN.md 6절 미결의 답): 계약이 빈약한 것은
+  // 고칠 일이지 커밋을 막을 일이 아니고, 규칙으로 만들면 이미 통과하던 계약서가 FAIL 이 된다
+  const unjudgeable = modules
+    .filter((m) => alive(m).length >= 2 && alive(m).every((inv) => inv.match(TAG_RE)?.[1] === '리뷰'))
+    .map((m) => m.fm.module ?? m.file);
+  const byTag = { 테스트: 0, grep: 0, 리뷰: 0, 없음: 0 };
+  for (const it of items) byTag[it.tag ?? '없음']++;
+
+  if (json) {
+    process.stdout.write(JSON.stringify({
+      schema: 1, mode, modules: modules.length, changed: changed.length,
+      invariants: items, byTag, unjudgeable,
+    }) + '\n');
+    process.exit(0);
+  }
+  console.log(`module-gate --review: ${changed.length}개 파일 변경 → 그 파일을 근거로 인용하는 불변식 ${items.length}개`);
+  for (const [tag, what] of [['테스트', '그 불변식을 검증하는 테스트를 돌린다. 통과가 증거다'],
+                             ['grep', '근거의 `재현:` 명령을 다시 돌린다'],
+                             ['리뷰', '판정 수단이 없다고 계약서가 스스로 적은 것. 여기만 판단이 필요하다'],
+                             ['없음', '태그가 없다 — R5 가 이미 울고 있을 것이다']]) {
+    const group = items.filter((it) => (it.tag ?? '없음') === tag);
+    if (!group.length) continue;
+    console.log(`\n[${tag}] ${group.length}건 — ${what}`);
+    for (const it of group) {
+      console.log(`  ${it.module.padEnd(16)} ${it.id.padEnd(4)} ${it.evidence.join(' ')}`);
+      console.log(`    ${it.text}`);
+      for (const r of it.repro) console.log(`    재현: ${r.scope} 에서 \`${r.pattern}\` ${r.expect}건`);
+    }
+  }
+  if (unjudgeable.length)
+    console.log(`\n판정 수단이 없는 계약서: ${unjudgeable.join(', ')} — 불변식이 둘 이상인데 전부 [리뷰] 다.\n  게이트는 이것으로 막지 않는다. 계약을 고칠 일이지 커밋을 막을 일이 아니다.`);
+  console.log('\n지적은 불변식 ID 를 인용한다. 인용할 불변식이 없는 지적은 계약이 비었다는 뜻이거나(→ 계약을 고친다) 취향이다(→ 버린다).');
+  process.exit(0);
 }
 
 for (const m of modules) {
