@@ -179,3 +179,57 @@ P3 은 이력 한 줄). 그 형식적 통과 뒤에는 두 프로브 모두 리�
 
 다음은 5d — 위 "페르소나 결함" 세 항목 중 1·2 를 프롬프트로 고친다. 3 은 고칠 것이 아니라 세는 것이다.
 그 다음이 5e 이고, 종료 조건(10절) 셋 중 지금 채워진 것은 "실전 검출 1건"(5b) 하나다.
+
+---
+
+## 재실행 (2026-09-13, 5d)
+
+위 "페르소나 결함" 1·2 를 프롬프트로 고친 뒤(`ac203a9` 펜스 금지, `fd307b8` 근거 좌표계) 같은 프로브 3종을
+kod-remastered 에서 다시 돌렸다. 원본 관찰은 위에 그대로 두었다 — 무엇이 고쳐졌는지가 기록이다.
+
+| 프로브 | 1차 answer | 재실행 answer | 결함 1 (펜스) | 결함 2 (좌표) |
+|---|---|---|---|---|
+| P1 계약 대조자 | 아니오 | 아니오 | 있었음 → 없음 | `MODULE.md:30` → `MODULE.md:38` (실제 줄) |
+| P2 불변식 판정자 | 거짓 | 거짓 | 있었음 → 없음 | 해당 없음 (원본 파일을 직접 읽는다) |
+| P2 계약 대조자 | 예 | 예 | 없었음 | `MODULE.md:30` → `MODULE.md:38` |
+| P3 범위 감시자 | 아니오 | 아니오 | 없었음 | 해당 없음 (줄번호를 적지 않는다) |
+| P3 계약 대조자 | 예 | 예 | 있었음 → 없음 | 근거 없음(빈 배열) |
+
+**결함 1·2 모두 재실행에서 사라졌다.** 7회 판정 중 코드펜스 0회, 계약 대조자가 낸 줄번호는 두 번 다
+파일의 실제 줄이었다(gameui/MODULE.md 의 I7 은 38행에 있다). 검출·통과 패턴은 1차와 완전히 같다 —
+프롬프트 수정이 판정을 바꾸지 않고 표기만 고쳤다는 뜻이고, 그것이 의도한 것이다.
+
+결함 3(범위 감시자의 빈 `reason`)은 고치지 않았다. 파일이 허용한 것이고, 고칠 것이 아니라 세는 것이다 —
+통과 연속 횟수는 이제 7회다(1차 4 + 재실행 3). 10회가 되면 DESIGN-review 6절 역방향 후보로 보고한다.
+
+### 재실행 verdict 전문
+
+```
+P1  { "persona": "계약 대조자", "answer": "아니오",
+      "reason": "근거 경로는 `ShanObject.cs:63-84` 로 그대로인데 바뀐 것은 파괴 순서와 이미 파괴된 경우의 동작(조용히 되돌아온다 → 예외를 던진다)이라, 약속 자체를 뒤집은 변경을 \"근거 경로 정정\" 이라 급을 낮춰 적었다",
+      "evidence": ["restored-project/Assets/Scripts/GameUI/MODULE.md:38"] }
+    { "persona": "범위 감시자", "answer": "예", "reason": "", "evidence": [] }
+
+P2  { "persona": "불변식 판정자", "invariant": "gameui/I7", "answer": "거짓",
+      "reason": "Release 가 `Object.Destroy(base.gameObject)` 를 먼저 부르고 그 뒤에 자식 Transform 순회·파괴를 하므로 \"자식을 먼저, 자기 gameObject 를 마지막에\" 라는 순서가 지금 코드에서는 뒤집혀 있다 (앞의 null 가드로 이미 파괴된 오브젝트에서 조용히 되돌아오는 부분만 여전히 성립한다).",
+      "evidence": ["…/ShanObject.cs:72-75", "…/ShanObject.cs:76-84", "…/ShanObject.cs:66-69"] }
+    { "persona": "계약 대조자", "answer": "예",
+      "reason": "contract_diff 의 유일한 변경은 I7 의 근거 줄 범위를 63-84 에서 63-88 로 옮긴 것이고 불변식 문언·다른 계약 칸은 그대로여서 문장이 말한 것과 diff 가 한 것이 일치한다",
+      "evidence": ["restored-project/Assets/Scripts/GameUI/MODULE.md:38"] }
+    { "persona": "범위 감시자", "answer": "예", "reason": "", "evidence": [] }
+
+P3  { "persona": "범위 감시자", "answer": "아니오",
+      "reason": "두 파일의 소유 모듈 `actions` 가 scope(`engine`, `restored-project`)에 없다.",
+      "evidence": ["restored-project/Assets/Scripts/Actions/FlowControl/LeActionExit.cs",
+                   "restored-project/Assets/Scripts/Actions/MODULE.md"] }
+    { "persona": "계약 대조자", "answer": "예",
+      "reason": "contract_diff 가 비어 계약 칸이 바뀌지 않았고, 문장도 계약 변경이 아니라 이력에 적는다고만 말한다",
+      "evidence": [] }
+```
+
+### 재실행에서 새로 보인 것
+
+- P2 를 다시 넣을 때 R11 은 **1차와 같은 자리에서 같은 값을 제안했다**(`63-84` 기준으로 재계산된 것).
+  위 "R11 의 정정 제안이 과교정일 수 있다" 는 재현됐고, 여전히 확인용 문구라 해롭지 않다
+- P3 을 CRLF 보존해 넣자 R1 만 울었다 — 1차와 같다. 줄바꿈 전면 변경이 R11 을 가린 현상은
+  이번 회차에서 재현하지 않았다(편집을 모두 줄바꿈 보존으로 했다). 그 추정은 확인되지 않은 채 남는다
