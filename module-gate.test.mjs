@@ -343,3 +343,45 @@ test('심볼의 점 표기는 근거 파일로 오인되지 않는다', (t) => {
   assert.equal(code, 0, out);
   assert.ok(!/R12/.test(out), out);
 });
+
+test('R3 은 한 간선의 양쪽이 같은 파일을 다른 줄로 인용하면 운다', (t) => {
+  // 순환 쌍의 in/out 은 같은 사실을 두 번 적는다. 한쪽 줄번호만 따라 밀면
+  // 슬러그 대칭은 그대로라 지금까지 조용했다
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', inDeps: ['- [[beta]] — beta 를 쓴다 (beta/b.cs:3)'] });
+  putModule(r.dir, { slug: 'beta', path: 'beta', outDeps: ['- [[alpha]] — alpha 가 쓴다 (beta/b.cs:9)'] });
+  write(r.dir, 'beta/b.cs', 'class B {}\n'.repeat(10));
+  r.commit();
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R3'), out);
+  assert.match(out, /beta\/b\.cs/);
+});
+
+test('R3 간선 근거 — 줄이 같으면 조용하고, 한쪽만 인용한 파일은 묻지 않는다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    inDeps: ['- [[beta]] — beta 를 쓴다 (beta/b.cs:3, beta/extra.cs:1)'],
+  });
+  putModule(r.dir, { slug: 'beta', path: 'beta', outDeps: ['- [[alpha]] — alpha 가 쓴다 (beta/b.cs:3)'] });
+  write(r.dir, 'beta/b.cs', 'class B {}\n'.repeat(10));
+  write(r.dir, 'beta/extra.cs', 'class E {}\n');
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 0, out);
+  assert.ok(!/R3/.test(out), out);
+});
+
+test('R3 간선 근거는 한쪽이 active 면 FAIL 이다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', inDeps: ['- [[beta]] — beta 를 쓴다 (beta/b.cs:3)'] });
+  putModule(r.dir, {
+    slug: 'beta', path: 'beta', status: 'active',
+    outDeps: ['- [[alpha]] — alpha 가 쓴다 (beta/b.cs:9)'],
+  });
+  write(r.dir, 'beta/b.cs', 'class B {}\n'.repeat(10));
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 1, out);
+  assert.ok(has(out, 'FAIL', 'alpha', 'R3'), out);
+});

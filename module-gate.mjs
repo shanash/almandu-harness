@@ -49,6 +49,10 @@ function parseModule(relPath, text) {
     return m ? m[1] : '';
   };
   const links = (s) => [...s.matchAll(/\[\[([^\]]+)\]\]/g)].map((m) => m[1]);
+  // slug → 그 링크가 적힌 줄. R3 이 간선 양쪽의 인용을 대조하는 데 쓴다
+  const linkLines = (s) => new Map(s.split('\n')
+    .filter((l) => /^- /.test(l) && /\[\[[^\]]+\]\]/.test(l))
+    .map((l) => [l.match(/\[\[([^\]]+)\]\]/)[1], l]));
   const depsIn = section('의존').match(/### in[\s\S]*?(?=### out|$)/)?.[0] ?? '';
   const depsOut = section('의존').match(/### out[\s\S]*$/)?.[0] ?? '';
   return {
@@ -60,6 +64,8 @@ function parseModule(relPath, text) {
     lines: text.split('\n').length,
     in: links(depsIn),
     out: links(depsOut),
+    inLines: linkLines(depsIn),
+    outLines: linkLines(depsOut),
     invariants: section('불변식').split('\n').filter((l) => /^- I\d+\./.test(l)),
     pending: section('미결'),
     history: section('이력').split('\n').filter((l) => /^- /.test(l)),
@@ -136,6 +142,18 @@ const evidenceRefs = (m, evidence) =>
     }))
     .filter((r) => r.file);
 
+// 의존 한 줄이 인용한 것 → Map(file → Set(줄 표기)). 줄번호 없는 인용은 담지 않는다 —
+// 그것은 줄에 대해 아무 주장도 하지 않으므로 반대쪽과 어긋날 수 없다
+const depEvidence = (mod, line) => {
+  const map = new Map();
+  for (const ref of evidenceRefs(mod, line)) {
+    if (!ref.spec) continue;
+    if (!map.has(ref.file)) map.set(ref.file, new Set());
+    map.get(ref.file).add(ref.spec);
+  }
+  return map;
+};
+
 // ---------- 규칙 ----------
 const results = [];
 const report = (level, mod, rule, msg) => results.push({ level, mod, rule, msg });
@@ -190,8 +208,27 @@ for (const m of modules) {
         continue;
       }
       const back = dir === 'out' ? other.in : other.out;
-      if (!back.includes(slug))
+      if (!back.includes(slug)) {
         report(lvl(m), slug, 'R3', `${dir} [[${dep}]] 이지만 ${dep}.${dir === 'out' ? 'in' : 'out'} 에 [[${slug}]] 없음`);
+        continue;
+      }
+      // 간선 하나를 양쪽이 각자 적으므로 인용도 두 벌이다. 한쪽 줄번호만 따라 밀면
+      // 슬러그 대칭은 그대로라 조용하다. in 쪽에서 한 번만 대조한다 — 같은 간선을 두 번 말하지 않는다.
+      // 양 끝의 status 가 다를 수 있으므로 엄한 쪽 수준으로 운다
+      if (dir !== 'in') continue;
+      const mine = depEvidence(m, m.inLines.get(dep) ?? '');
+      const theirs = depEvidence(other, other.outLines.get(slug) ?? '');
+      for (const [file, specs] of mine) {
+        const back2 = theirs.get(file);
+        // 한쪽만 인용한 파일은 묻지 않는다 — 두 문장은 같은 간선을 다른 각도에서 적는다.
+        // 줄번호 없는 인용도 묻지 않는다 (depEvidence 가 이미 버린다): 줄에 대해 아무 주장도 하지 않는다
+        if (!back2) continue;
+        const a = [...specs].sort().join('·');
+        const b = [...back2].sort().join('·');
+        if (a !== b)
+          report(strict(m) || strict(other) ? 'FAIL' : 'WARN', slug, 'R3',
+            `in [[${dep}]] 과 ${dep}.out [[${slug}]] 이 ${file} 을 다른 줄로 인용 — ${a} vs ${b}`);
+      }
     }
   }
 
