@@ -21,7 +21,7 @@ node .harness/module-gate.mjs --staged      # 인덱스만
 node .harness/module-gate.mjs --base origin/main
 node .harness/module-gate.mjs --fix         # R12 근거 경로 자동 정정
 node .harness/module-gate.mjs --audit       # diff 무관: 인용 줄이 실물을 가리키는지 전수 대조
-node --test .harness/module-gate.test.mjs   # 회귀 테스트 39개, ~29초
+node --test .harness/module-gate.test.mjs   # 회귀 테스트 41개, ~28초
 ```
 
 커밋 경로는 둘이고 모드가 다르다. 터미널 커밋은 `tools/git-hooks/pre-commit` 이 `--staged` 로

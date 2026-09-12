@@ -157,6 +157,30 @@ test('R2 계약 섹션을 고치고 이력을 안 늘리면 운다', (t) => {
   assert.ok(has(out, 'WARN', 'alpha', 'R2'), out);
 });
 
+test('R4 는 계약 칸만 센다 — 불변식으로 80줄을 넘기면 운다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: Array.from({ length: 80 }, (_, i) => `- I${i + 1}. 약속한다 (근거: 없음) [리뷰]`),
+  });
+  r.commit();
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R4'), out);
+});
+
+test('R4 는 미결·이력이 아무리 길어도 울지 않는다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    pending: Array.from({ length: 60 }, (_, i) => `- 질문 ${i + 1}`),
+    history: Array.from({ length: 60 }, (_, i) => `- 2026-01-01 변경 ${i + 1}`),
+  });
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 0);
+  assert.ok(!has(out, 'WARN', 'alpha', 'R4'), out);
+});
+
 test('R3 한쪽에만 적은 의존은 대칭 경고', (t) => {
   const r = newRepo(t);
   putModule(r.dir, { slug: 'alpha', path: 'alpha', outDeps: ['- [[beta]] — 한쪽만 적었다'] });

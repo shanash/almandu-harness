@@ -68,6 +68,15 @@ function parseModule(relPath, text) {
     .map((l) => [l.match(/\[\[([^\]]+)\]\]/)[1], l]));
   const depsIn = section('의존').match(/### in[\s\S]*?(?=### out|$)/)?.[0] ?? '';
   const depsOut = section('의존').match(/### out[\s\S]*$/)?.[0] ?? '';
+  // R4 가 세는 줄. 미결과 이력은 빠진다 — 둘은 줄 수가 줄지 않는 칸이라(이력은 append-only,
+  // 미결은 답이 나올 때까지 남는다) 함께 세면 R2 가 늘린 줄을 R4 가 벌하고, 오래된 계약서는
+  // 변경할 때마다 책임·불변식을 깎게 된다. R4 가 묻는 것은 "이 디렉토리의 계약이 큰가" 다
+  let inExcluded = false;
+  const countedLines = text.split('\n').filter((l) => {
+    const h = l.match(/^## (.+?)\s*$/);
+    if (h) inExcluded = h[1] === '미결' || h[1] === '이력';
+    return !inExcluded;
+  }).length;
   return {
     file: relPath,
     dir: toPosix(dirname(relPath)) === '.' ? '' : toPosix(dirname(relPath)),
@@ -75,6 +84,7 @@ function parseModule(relPath, text) {
     watch: fm.watch ? fm.watch.split(',').map((s) => s.trim()) : DEFAULT_WATCH,
     contract: CONTRACT_SECTIONS.map((s) => section(s).trim()).join('\n---\n'),
     lines: text.split('\n').length,
+    countedLines,
     in: links(depsIn),
     out: links(depsOut),
     inLines: linkLines(depsIn),
@@ -340,8 +350,9 @@ for (const m of modules) {
     }
   }
 
-  // R4 길이
-  if (m.lines > MAX_LINES) report(lvl(m), slug, 'R4', `${m.lines}줄 > ${MAX_LINES} — 분할 후보`);
+  // R4 길이 (미결·이력 제외)
+  if (m.countedLines > MAX_LINES)
+    report(lvl(m), slug, 'R4', `계약 ${m.countedLines}줄 > ${MAX_LINES} — 분할 후보 (미결·이력 제외, 파일 ${m.lines}줄)`);
 
   // R9 CLAUDE.md 어댑터 (어댑터는 재귀하지 않으므로 모듈마다 필요)
   const adapter = m.dir ? `${m.dir}/CLAUDE.md` : 'CLAUDE.md';
