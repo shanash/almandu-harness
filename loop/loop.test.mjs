@@ -20,13 +20,14 @@ const GATE = join(HERE, '..', 'module-gate.mjs');
 
 // ---------- fixture ----------
 
-function moduleDoc({ slug, path, status = 'draft', watch = '.mjs', history = ['- 2026-01-01 최초 작성'] }) {
+function moduleDoc({ slug, path, status = 'draft', watch = '.mjs', history = ['- 2026-01-01 최초 작성'],
+                     invariants = ['- I1. 아무것도 약속하지 않는다 (근거: 없음) [리뷰]'] }) {
   return [
     '---', `module: ${slug}`, `path: ${path}`, 'schema: 1', `status: ${status}`, `watch: ${watch}`, '---', '',
     '## 책임', `${slug} 를 소유한다.`, '',
     '## 진입점', '- 없음', '',
     '## 의존', '### in (이 모듈이 쓰는 것)', '- 없음', '### out (이 모듈을 쓰는 것)', '- 없음', '',
-    '## 불변식', '- I1. 아무것도 약속하지 않는다 (근거: 없음) [리뷰]', '',
+    '## 불변식', ...invariants, '',
     '## 미결', '',
     '## 이력', ...history, '',
   ].join('\n');
@@ -254,4 +255,52 @@ test('--trailer 는 계약·게이트 줄과 같은 문단에 붙는다 — git 
   assert.equal(got.code, 0);
   const last = execSync('git log -1 --format=%B', { cwd: r.dir, encoding: 'utf8' }).trim().split('\n\n').pop();
   assert.match(last, /^게이트: .*\nCo-Authored-By: 누군가 <x@y>$/);
+});
+
+// review 는 세션을 요구하지 않는다 — 리뷰 범위는 세션이 아니라 diff 가 정한다
+function reviewRepo(t, { expect = 2 } = {}) {
+  const r = newRepo(t);
+  write(r.dir, 'child/MODULE.md', moduleDoc({ slug: 'child', path: 'child', invariants: [
+    '- I1. b 를 약속한다 (근거: child/b.mjs:1) [테스트]',
+    `- I2. export 는 둘이다 (근거: child/b.mjs:2, 재현: child 에서 \`export \` ${expect}건) [grep]`,
+    '- I3. 판정 수단이 없다 (근거: child/b.mjs:3) [리뷰]',
+  ] }));
+  r.write('child/b.mjs', 'export const b = 1;\nexport const c = 2;\nconst d = 3;\n');
+  r.git('add -A');
+  r.git('commit -q -m fixture2');
+  r.write('child/b.mjs', 'export const b = 9;\nexport const c = 2;\nconst d = 3;\n');
+  return r;
+}
+
+test('review 는 태그별로 리뷰어를 배치하고 세션을 요구하지 않는다', (t) => {
+  const r = reviewRepo(t);
+  const got = loop(r.dir, ['review', '--json']);
+  assert.equal(got.code, 0, got.out);
+  const j = JSON.parse(got.out.trim().split('\n').pop());
+  assert.deepEqual(j.byTag, { 테스트: 1, grep: 1, 리뷰: 1, 없음: 0 });
+  assert.equal(j.test.known, false);          // fixture 에 package.json 이 없다
+  assert.deepEqual(j.r13, []);
+  assert.equal(j.failed, false);
+});
+
+test('review 는 R13 이 재현 주장의 어긋남을 내면 1 로 끝난다', (t) => {
+  const r = reviewRepo(t, { expect: 1 });     // 실제로는 2건이다
+  const got = loop(r.dir, ['review']);
+  assert.equal(got.code, 1, got.out);
+  assert.match(got.out, /R13 이 어긋남을 냈다/);
+});
+
+test('review 는 리포의 테스트 명령이 실패하면 1 로 끝난다', (t) => {
+  const r = reviewRepo(t);
+  r.write('package.json', '{ "name": "fixture", "scripts": { "test": "node -e \\"process.exit(1)\\"" } }\n');
+  const got = loop(r.dir, ['review']);
+  assert.equal(got.code, 1, got.out);
+  assert.match(got.out, /`npm test` 실패/);
+});
+
+test('review 는 변경과 무관한 불변식을 내지 않는다', (t) => {
+  const r = reviewRepo(t);
+  const j = JSON.parse(loop(r.dir, ['review', '--json']).out.trim().split('\n').pop());
+  // other/MODULE.md 의 I1 은 근거가 "없음" 이라 어느 파일도 인용하지 않는다
+  assert.deepEqual([...new Set(j.invariants.map((i) => i.module))], ['child']);
 });

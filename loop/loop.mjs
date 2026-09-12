@@ -3,11 +3,12 @@
 // 사용: node loop/loop.mjs scope <경로>...                    (계약을 열고 기준선을 잡는다)
 //       node loop/loop.mjs status
 //       node loop/loop.mjs reconcile                          (재판정 + 기준선 차집합)
+//       node loop/loop.mjs review                             (게이트가 정한 배치대로 리뷰어를 돌린다)
 //       node loop/loop.mjs commit -m "<제목>" [-m <본문>...] [--contract "<한 줄>"] [--dry-run]
 //       node loop/loop.mjs abort
 // 종료 코드: 게이트를 부르는 명령은 게이트의 종료 코드를 그대로 낸다 — 루프는 판정하지 않는다.
 //           루프 자신의 거부(세션 없음, scope 밖 경로 등)는 2 다.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -197,6 +198,64 @@ if (cmd === 'reconcile') {
   process.exit(code);
 }
 
+// ---------- review ----------
+// 게이트가 리뷰 범위와 태그를 정하고(`--review`), 여기서는 그 배치대로 리뷰어를 돌린다.
+// 계약 문장에 대한 판정은 하지 않는다 — 종료 코드는 테스트 러너와 R13 의 결과를 그대로 낸 것이다.
+if (cmd === 'review') {
+  const { data: scope } = gateJson('--review');
+  const { data: verdict } = gateJson();     // [grep] 리뷰어는 R13 의 판정을 그대로 쓴다 (두 번째 카운터를 만들지 않는다)
+  const group = (tag) => scope.invariants.filter((it) => (it.tag ?? '없음') === tag);
+
+  // [테스트] 는 "그 불변식을 검증하는 테스트" 를 특정하지 못한다 — 계약서가 적지 않는다.
+  // 리포의 테스트 명령 전체를 돌리고 통과를 증거로 삼되, 명령을 모르면 모른다고 말한다
+  let test = { known: false, ok: null, tail: '' };
+  const pkg = join(root, 'package.json');
+  if (group('테스트').length && existsSync(pkg)) {
+    const script = JSON.parse(readFileSync(pkg, 'utf8')).scripts?.test;
+    if (script) {
+      const r = spawnSync('npm', ['test', '--silent'], { cwd: root, encoding: 'utf8' });
+      test = { known: true, ok: r.status === 0, tail: `${r.stdout ?? ''}${r.stderr ?? ''}`.trim().split('\n').slice(-6).join('\n') };
+    }
+  }
+  // R13 은 재현 주장을 다시 센 결과다. 예산에 걸려 못 센 것도 R13 으로 말하므로 그대로 옮긴다
+  const r13 = verdict.results.filter((r) => r.rule === 'R13');
+  const failed = (test.known && !test.ok) || r13.length > 0;
+
+  if (has('--json')) {
+    process.stdout.write(`${JSON.stringify({
+      schema: 1, mode: 'review', changed: scope.changed, invariants: scope.invariants,
+      byTag: scope.byTag, unjudgeable: scope.unjudgeable, test, r13, failed,
+    })}\n`);
+    process.exit(failed ? 1 : 0);
+  }
+  console.log(`review: ${scope.changed}개 파일 변경 → 봐야 할 불변식 ${scope.invariants.length}개`);
+  const show = (it) => {
+    console.log(`  ${it.module.padEnd(14)} ${it.id.padEnd(4)} ${it.text}`);
+    console.log(`    근거 ${it.evidence.join(' ')}`);
+  };
+  if (group('테스트').length) {
+    console.log(`\n[테스트] ${group('테스트').length}건 — ${test.known ? (test.ok ? '`npm test` 통과. 그것이 증거다' : '`npm test` 실패 — 아래 문장 중 무엇이 깨졌는지 먼저 본다') : '테스트 명령을 모른다. 사람이 돌린다'}`);
+    group('테스트').forEach(show);
+    if (test.known && !test.ok) console.log(test.tail.split('\n').map((l) => `    ${l}`).join('\n'));
+  }
+  if (group('grep').length) {
+    console.log(`\n[grep] ${group('grep').length}건 — ${r13.length ? 'R13 이 어긋남을 냈다' : 'R13 이 재현 주장을 다시 셌고 어긋남이 없다'}`);
+    for (const it of group('grep')) {
+      show(it);
+      for (const rp of it.repro) console.log(`    재현: ${rp.scope} 에서 \`${rp.pattern}\` ${rp.expect}건`);
+    }
+    for (const r of r13) console.log(`    ${fmt(r)}`);
+  }
+  if (group('리뷰').length) {
+    console.log(`\n[리뷰] ${group('리뷰').length}건 — 판정 수단이 없다고 계약서가 스스로 적은 자리다. 여기만 판단이 필요하다`);
+    group('리뷰').forEach(show);
+  }
+  if (group('없음').length) { console.log(`\n[태그 없음] ${group('없음').length}건 — R5 가 이미 울고 있을 것이다`); group('없음').forEach(show); }
+  if (scope.unjudgeable.length) console.log(`\n판정 수단이 없는 계약서: ${scope.unjudgeable.join(', ')} — 불변식이 둘 이상인데 전부 [리뷰] 다`);
+  console.log('\n지적은 위 ID 를 인용한다. 인용할 불변식이 없는 지적은 계약이 비었다는 뜻이거나(→ 계약을 고친다) 취향이다(→ 버린다).');
+  process.exit(failed ? 1 : 0);
+}
+
 // ---------- commit ----------
 if (cmd === 'commit') {
   const s = requireSession();
@@ -272,4 +331,4 @@ if (cmd === 'abort') {
   process.exit(0);
 }
 
-die('사용: node loop/loop.mjs <scope|status|reconcile|commit|abort> ...');
+die('사용: node loop/loop.mjs <scope|status|reconcile|review|commit|abort> ...');
