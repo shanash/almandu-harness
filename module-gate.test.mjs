@@ -523,3 +523,65 @@ test('R11 은 이번에 같이 고친 인용은 밀림으로 묻지 않는다', 
   const { out } = gate(r.dir);
   assert.ok(!/인용 줄 위쪽/.test(out), out);
 });
+
+test('R13 은 재현 관용의 건수를 다시 세고, 계약서 자신의 인용은 빼고 센다', (t) => {
+  // 패턴은 MODULE.md 안에 문자열로 적혀 있다 — 계약서를 세면 모든 주장이 제 발에 걸린다
+  for (const [claim, status, level, code] of [['3건', 'draft', null, 0], ['4건', 'active', 'FAIL', 1]]) {
+    const r = newRepo(t);
+    putModule(r.dir, {
+      slug: 'alpha', path: 'alpha', status,
+      invariants: [`- I1. FOO 는 세 번뿐이다 (근거: alpha/a.cs:1, 재현: \`FOO\` ${claim}) [grep]`],
+    });
+    write(r.dir, 'alpha/a.cs', 'FOO\nFOO\nFOO\n');
+    r.commit();
+    const got = gate(r.dir);
+    assert.equal(got.code, code, `${claim}: ${got.out}`);
+    if (level) assert.ok(has(got.out, level, 'alpha', 'R13'), got.out);
+    else assert.ok(!/R13/.test(got.out), got.out);
+  }
+});
+
+test('R13 의 범위는 적은 경로, 안 적으면 모듈 디렉토리다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: [
+      '- I1. 제 디렉토리에 셋 (근거: alpha/a.cs:1, 재현: `FOO` 3건) [grep]',
+      '- I2. beta 에 둘 (근거: alpha/a.cs:1, 재현: beta 에서 `FOO` 2건) [grep]',
+    ],
+  });
+  putModule(r.dir, { slug: 'beta', path: 'beta' });
+  write(r.dir, 'alpha/a.cs', 'FOO\nFOO\nFOO\n');
+  write(r.dir, 'beta/b.cs', 'FOO\nFOO\n');
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 0, out);
+  assert.ok(!/R13/.test(out), out);
+});
+
+test('R13 은 옵트인이다 — 관용을 적지 않은 [grep] 불변식은 세지 않는다', (t) => {
+  // 리포의 [grep] 불변식 전부를 한꺼번에 검사 대상으로 만들면 계약서 여러 장이 동시에 빨개진다
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. FOO 는 아흔아홉 번 나온다 (근거: alpha/a.cs:1) [grep]'],
+  });
+  write(r.dir, 'alpha/a.cs', 'FOO\n');
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 0, out);
+  assert.ok(!/R13/.test(out), out);
+});
+
+test('R13 은 해석되지 않는 재현 범위를 경고한다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. 없는 곳에서 센다 (근거: alpha/a.cs:1, 재현: nowhere 에서 `FOO` 1건) [grep]'],
+  });
+  write(r.dir, 'alpha/a.cs', 'FOO\n');
+  r.commit();
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R13'), out);
+  assert.match(out, /범위/);
+});

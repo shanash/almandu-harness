@@ -5,7 +5,7 @@
 //       node .harness/module-gate.mjs --base origin/main   (CI)
 //       node .harness/module-gate.mjs --fix      (R12 근거 경로를 리포 루트 기준으로 자동 정정)
 // 종료 코드: FAIL 1개 이상이면 1
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, relative, dirname } from 'node:path';
 
@@ -23,6 +23,11 @@ const DEFAULT_WATCH = ['.cs', '.asmdef', '.py', '.sh', '.mjs', '.js', '.ts'];
 const watched = (m, f) => m.watch.some((w) =>
   w.startsWith('.') ? f.endsWith(w) : f === w || f.endsWith(`/${w}`));
 const CONTRACT_SECTIONS = ['책임', '진입점', '의존', '불변식'];
+// R13 건수 주장. `재현: [<범위> 에서 ]`<고정 문자열>` <N>건` 을 적은 불변식만 검사한다 —
+// 옵트인이 아니면 기존 [grep] 불변식 전부가 한꺼번에 검사 대상이 된다
+const COUNT_RE = /재현:\s*(?:([\w.\-\/]+)\s*에서\s*)?`([^`]+)`\s*(\d+)건/g;
+// 커밋마다 도는 grep 의 상한. 각 grep 은 한 모듈 디렉토리(또는 적힌 경로)로 좁혀진다
+const MAX_COUNT_CLAIMS = 24;
 
 const root = execSync('git rev-parse --show-toplevel').toString().trim();
 const sh = (cmd) => execSync(cmd, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
@@ -124,6 +129,19 @@ const shiftAbove = (file, line) => hunksOf(file).reduce((acc, h) => {
   return end < line ? acc + h.d - h.b : acc;
 }, 0);
 
+// 범위 안에서 고정 문자열이 몇 번 나오는지. 패턴에 셸 메타문자가 들어오므로 execFileSync 를 쓴다.
+// MODULE.md 는 제외한다 — 패턴이 계약서 안에 문자열로 적혀 있어 모든 주장이 제 발에 걸린다
+const countMatches = (pattern, scope) => {
+  let out = '';
+  try {
+    out = execFileSync('git', ['grep', '-I', '-F', '-o', ...(staged ? ['--cached'] : ['--untracked']),
+      '-e', pattern, '--', scope], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch (e) {
+    if (e.status !== 1) throw e;   // 1 = 한 건도 없음
+  }
+  return out.split('\n').filter((l) => l && !/(^|\/)MODULE\.md:/.test(l)).length;
+};
+
 // a 가 m 의 조상 모듈인가 (루트 모듈은 모든 모듈의 조상)
 const isAncestor = (a, m) => a !== m && (a.dir === '' || m.dir.startsWith(a.dir + '/'));
 
@@ -185,6 +203,7 @@ const strict = (m) => m.fm.status === 'active'; // draft 는 WARN 으로 강등
 const lvl = (m) => (strict(m) ? 'FAIL' : 'WARN');
 const evidenceIndex = new Map(); // "file:line" → { mod, id }  (R8)
 const fixQueue = new Map();      // MODULE.md → [정정할 경로]   (R12 --fix)
+let countClaims = 0;             // R13 한 실행의 grep 예산
 
 for (const m of modules) {
   const slug = m.fm.module ?? m.file;
@@ -296,6 +315,23 @@ for (const m of modules) {
         if (fix) fixQueue.set(m.file, [...(fixQueue.get(m.file) ?? []), p]);
         else report(lvl(m), slug, 'R12', `${id} 근거 경로 "${p}" 가 리포 루트 기준이 아님 → "${resolved}"`);
       }
+    }
+    // R13 건수 주장을 게이트가 다시 센다. 태그가 있는지만 보고 grep 을 돌리지 않으면
+    // 건수는 조용히 거짓이 된다 — actions I1 이 40 에서 42 로 틀어졌을 때 사람이 세서 고쳤다
+    for (const [, scopeRaw, pattern, expect] of inv.matchAll(COUNT_RE)) {
+      if (countClaims >= MAX_COUNT_CLAIMS) {
+        report('WARN', slug, 'R13', `건수 주장이 ${MAX_COUNT_CLAIMS}개를 넘었다 — ${id} 부터 세지 않았다`);
+        break;
+      }
+      countClaims++;
+      const scope = scopeRaw ?? m.dir;
+      if (!scope || !existsSync(join(root, scope))) {
+        report(lvl(m), slug, 'R13', `${id} 재현 범위 "${scope || '(모듈 디렉토리 없음)'}" 가 해석되지 않음 — 리포 루트 기준 경로를 적는다`);
+        continue;
+      }
+      const n = countMatches(pattern, scope);
+      if (n !== Number(expect))
+        report(lvl(m), slug, 'R13', `${id} 재현 \`${pattern}\` 이 ${scope} 에서 ${n}건 — 계약은 ${expect}건이라고 적는다`);
     }
     // R6 검증 근거가 다른 모듈에 있으면 그 모듈이 out 에 있어야 함. 자기 자신과 조상(공용 테스트 보관처)은 제외
     for (const ref of evidenceRefs(m, evidence)) {
