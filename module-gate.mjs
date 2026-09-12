@@ -16,8 +16,12 @@ const baseIdx = args.indexOf('--base');
 const base = baseIdx >= 0 ? args[baseIdx + 1] : 'HEAD';
 const MAX_LINES = 80;
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'Library', 'Temp', 'obj', 'Logs', 'builds']);
-// R1/R2 가 "코드 변경"으로 보는 확장자. 모듈별로 frontmatter `watch: .cs,.shader` 로 덮어쓸 수 있다
+// R1 이 "코드 변경"으로 보는 것. 모듈별로 frontmatter `watch: .cs,.shader` 로 덮어쓸 수 있다
 const DEFAULT_WATCH = ['.cs', '.asmdef', '.py', '.sh', '.mjs', '.js', '.ts'];
+// watch 항목은 확장자(`.cs`) 또는 파일명·경로 꼬리(`git-hooks/pre-commit`)다. 후자를 endsWith 로만
+// 보면 `pre-commit` 이 `my-pre-commit` 까지 먹으므로 경로 조각 경계에서만 맞춘다
+const watched = (m, f) => m.watch.some((w) =>
+  w.startsWith('.') ? f.endsWith(w) : f === w || f.endsWith(`/${w}`));
 const CONTRACT_SECTIONS = ['책임', '진입점', '의존', '불변식'];
 
 const root = execSync('git rev-parse --show-toplevel').toString().trim();
@@ -182,8 +186,7 @@ for (const m of modules) {
     report('FAIL', slug, 'R0', `path(${m.fm.path}) 와 실제 위치(${m.dir || '.'}) 불일치`);
 
   // R1 소스 diff ⇒ MODULE.md diff (데이터·에셋 변경은 무시)
-  const codeChanged = changed.filter(
-    (f) => ownerOf(f) === m && m.watch.some((ext) => f.endsWith(ext)));
+  const codeChanged = changed.filter((f) => ownerOf(f) === m && watched(m, f));
   const docChanged = changedSet.has(m.file);
   if (codeChanged.length && !docChanged)
     report(lvl(m), slug, 'R1', `소스 ${codeChanged.length}개 변경, MODULE.md 미변경 — 계약 확인 필요 (예: ${codeChanged[0]})`);

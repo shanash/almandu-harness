@@ -385,3 +385,25 @@ test('R3 간선 근거는 한쪽이 active 면 FAIL 이다', (t) => {
   assert.equal(code, 1, out);
   assert.ok(has(out, 'FAIL', 'alpha', 'R3'), out);
 });
+
+test('watch 는 확장자 없는 파일도 받는다 — 게이트를 부르는 훅 자신이 그 자리다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', watch: '.sh,git-hooks/pre-commit' });
+  write(r.dir, 'alpha/git-hooks/pre-commit', '#!/bin/sh\nexit 0\n');
+  r.commit();
+  write(r.dir, 'alpha/git-hooks/pre-commit', '#!/bin/sh\nexit 1\n');
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R1'), out);
+});
+
+test('watch 의 파일명은 경로 조각 경계에서만 맞는다', (t) => {
+  // endsWith 로만 보면 `pre-commit` 이 `my-pre-commit` 까지 먹는다
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', watch: 'pre-commit' });
+  write(r.dir, 'alpha/my-pre-commit', 'old\n');
+  r.commit();
+  write(r.dir, 'alpha/my-pre-commit', 'new\n');
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 0, out);
+  assert.ok(!/R1/.test(out), out);
+});
