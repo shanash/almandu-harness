@@ -1,1 +1,5 @@
 node_modules/
+
+# 도구가 만드는 사본 — 커맨드·어댑터의 원본은 .claude/ 와 CLAUDE.md 다
+.agents/
+AGENTS.md

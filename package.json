@@ -1,6 +1,6 @@
 {
   "name": "module-harness",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MODULE.md 계약 게이트 — 디렉토리별 계약을 커밋 시점에 판정한다",
   "bin": {
     "module-gate": "module-gate.mjs",
