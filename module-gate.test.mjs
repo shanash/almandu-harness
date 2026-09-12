@@ -225,6 +225,48 @@ test('R3 침묵은 "모듈" 을 말하는 줄에만 적용된다', (t) => {
   assert.ok(has(out, 'WARN', 'alpha', 'R3'), out);
 });
 
+test('R14 in 쪽 외부 표지는 설치 목록에 있으면 조용하다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', inDeps: ['- [[harness]] — 게이트를 부른다 (외부: module-harness)'] });
+  write(r.dir, 'package.json', JSON.stringify({ devDependencies: { 'module-harness': '^0.1.0' } }));
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 0, out);
+  assert.ok(!has(out, 'WARN', 'alpha', 'R3'), out);
+  assert.ok(!has(out, 'WARN', 'alpha', 'R14'), out);
+});
+
+test('R14 외부 표지가 가리키는 패키지가 설치 목록에 없으면 운다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', inDeps: ['- [[harness]] — 게이트를 부른다 (외부: module-harness)'] });
+  write(r.dir, 'package.json', JSON.stringify({ devDependencies: {} }));
+  r.commit();
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R14'), out);
+  assert.match(out, /package\.json 의존에도 node_modules 에도 없다/);
+});
+
+test('R14 out 쪽에는 외부 표지를 적을 수 없다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', outDeps: ['- [[consumer]] — 이 게이트를 쓴다 (외부: some-repo)'] });
+  r.commit();
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R14'), out);
+  assert.match(out, /out 은 리포 경계를 넘지 못한다/);
+});
+
+test('R14 근거는 node_modules 안을 가리키지 못한다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. 게이트가 막는다 (근거: node_modules/module-harness/module-gate.mjs:1) [리뷰]'],
+  });
+  r.commit();
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R14'), out);
+  assert.ok(!has(out, 'WARN', 'alpha', 'R12'), out);
+});
+
 test('R6 근거가 다른 모듈 소유이면 in 쪽에 적혀 있어도 조용하다', (t) => {
   // in 에 있음 → 침묵 (방향이 맞는지는 R3 이 본다)
   const ok = newRepo(t);

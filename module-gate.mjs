@@ -156,6 +156,18 @@ const countMatches = (pattern, scope) => {
   return out.split('\n').filter((l) => l && !/(^|\/)MODULE\.md:/.test(l)).length;
 };
 
+// R14 외부 모듈. `in` 쪽 의존 줄에 `외부: <패키지명>` 을 적으면 그 슬러그는 이 리포 밖에 산다 —
+// 하네스가 npm 패키지로 설치되면서 생긴 자리다. `out` 쪽에는 적을 수 없다: 패키지는 자기를 쓰는
+// 리포를 셀 수 없고, 셀 수 있다고 적는 순간 그 줄은 거짓이 된다. 쓰는 쪽이 자기 `in` 에 적는다
+const EXTERNAL_RE = /외부:\s*(@?[\w.\-]+(?:\/[\w.\-]+)?)/;
+const pkgDeps = (() => {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+    return new Set(['dependencies', 'devDependencies', 'optionalDependencies']
+      .flatMap((k) => Object.keys(pkg[k] ?? {})));
+  } catch { return null; } // package.json 이 없는 리포에는 외부 인용도 없다
+})();
+
 // a 가 m 의 조상 모듈인가 (루트 모듈은 모든 모듈의 조상)
 const isAncestor = (a, m) => a !== m && (a.dir === '' || m.dir.startsWith(a.dir + '/'));
 
@@ -317,6 +329,18 @@ for (const m of modules) {
   for (const [dir, deps] of [['out', m.out], ['in', m.in]]) {
     for (const dep of deps) {
       const other = bySlug.get(dep);
+      // 외부 표지가 붙은 간선은 리포 경계를 넘는다 — 대칭도 모듈 후보 경고도 물을 상대가 없다.
+      // 대신 그 패키지가 실제로 설치 목록에 있는지를 묻는다. 그것이 이 줄의 유일한 검증 수단이다
+      const ext = ((dir === 'in' ? m.inLines : m.outLines).get(dep) ?? '').match(EXTERNAL_RE)?.[1];
+      if (ext) {
+        if (dir === 'out')
+          report(lvl(m), slug, 'R14', `out [[${dep}]] 에 외부 표지 — out 은 리포 경계를 넘지 못한다 (쓰는 쪽이 자기 in 에 적는다)`);
+        else if (other)
+          report(lvl(m), slug, 'R14', `in [[${dep}]] 이 외부 표지를 달았지만 이 리포에 MODULE.md 가 있다 — ${other.file}`);
+        else if (!pkgDeps?.has(ext) && !existsSync(join(root, 'node_modules', ext)))
+          report(lvl(m), slug, 'R14', `in [[${dep}]] 의 외부 모듈 "${ext}" 이 package.json 의존에도 node_modules 에도 없다`);
+        continue;
+      }
       // 상대에 MODULE.md 가 없으면 모듈 후보다. 미결이 이미 그렇게 적어 뒀으면 침묵한다 —
       // 순환 의존을 양쪽에 적으면 조용해지는 것과 같은 원리로, 아는 사실을 두 번 말하게 하지 않는다
       // 이 경고만 `status` 와 무관하게 WARN 이다 — 상대가 아직 모듈이 아니라는 안내이지
@@ -384,6 +408,12 @@ for (const m of modules) {
       const resolved = resolveEvidencePath(m, p);
       // 해석 실패는 "기준이 다름" 과 다른 사고다 — 정정할 대상이 없고, evidenceRefs 가 버리므로
       // R6·R8·R11 도 그 인용을 못 본다. 침묵하면 틀린 경로가 계약서에 눌러앉는다
+      // 설치된 패키지 안의 파일은 근거가 되지 못한다 — node_modules 는 gitignore 되어 R11 의
+      // diff 에 영원히 나타나지 않으므로, 그 인용은 밀려도 썩어도 아무도 묻지 않는다
+      if (p.startsWith('node_modules/')) {
+        report(lvl(m), slug, 'R14', `${id} 근거 "${p}" 가 외부 모듈 안을 가리킨다 — 그쪽 계약의 불변식 ID 로 말한다`);
+        continue;
+      }
       if (!resolved)
         report(lvl(m), slug, 'R12', `${id} 근거 경로 "${p}" 가 어디로도 해석되지 않음 — 파일이 없거나 경로가 틀렸다. R11 도 이 파일을 추적하지 못한다`);
       else if (resolved !== p) {

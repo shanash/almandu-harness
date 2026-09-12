@@ -1,0 +1,21 @@
+{
+  "name": "module-harness",
+  "version": "0.1.0",
+  "description": "MODULE.md 계약 게이트 — 디렉토리별 계약을 커밋 시점에 판정한다",
+  "bin": {
+    "module-gate": "module-gate.mjs"
+  },
+  "scripts": {
+    "test": "node --test module-gate.test.mjs"
+  },
+  "files": [
+    "module-gate.mjs",
+    "MODULE-schema-v1.md",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "private": false
+}
