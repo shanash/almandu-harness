@@ -407,3 +407,65 @@ test('watch 의 파일명은 경로 조각 경계에서만 맞는다', (t) => {
   assert.equal(code, 0, out);
   assert.ok(!/R1/.test(out), out);
 });
+
+test('R12 는 active 에서 FAIL 이다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha', status: 'active',
+    invariants: ['- I1. 없는 파일에 기댄다 (근거: nowhere/missing.cs:12) [grep]'],
+  });
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 1, out);
+  assert.ok(has(out, 'FAIL', 'alpha', 'R12'), out);
+});
+
+test('R6 은 active 에서 FAIL 이다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha', status: 'active',
+    invariants: ['- I1. beta 의 모양에 기댄다 (근거: beta/b.cs:1) [grep]'],
+  });
+  putModule(r.dir, { slug: 'beta', path: 'beta' });
+  write(r.dir, 'beta/b.cs', 'class B {}\n');
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 1, out);
+  assert.ok(has(out, 'FAIL', 'alpha', 'R6'), out);
+});
+
+test('R8 은 active 에서 FAIL 이다', (t) => {
+  // 둘 다 gamma 를 의존에 적어 R6 은 조용하고 R8 만 남는다. 어느 쪽이 두 번째로
+  // 인용하는지는 순회 순서에 달렸으므로 둘 다 active 로 두고 FAIL 여부만 본다
+  const r = newRepo(t);
+  for (const slug of ['alpha', 'beta']) {
+    putModule(r.dir, {
+      slug, path: slug, status: 'active',
+      inDeps: ['- [[gamma]] — gamma 를 쓴다'],
+      invariants: ['- I1. gamma 의 모양에 기댄다 (근거: gamma/g.cs:1) [grep]'],
+    });
+  }
+  putModule(r.dir, {
+    slug: 'gamma', path: 'gamma',
+    outDeps: ['- [[alpha]] — alpha 가 쓴다', '- [[beta]] — beta 가 쓴다'],
+  });
+  write(r.dir, 'gamma/g.cs', 'class G {}\n');
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 1, out);
+  assert.ok(out.split('\n').some((l) => l.startsWith('FAIL') && l.includes(' R8  ')), out);
+});
+
+test('R3 모듈 후보 경고는 active 에서도 WARN 이다', (t) => {
+  // 상대가 아직 모듈이 아니라는 안내이지 계약의 결함이 아니다 — 미결에 적으면 침묵하는
+  // 승인 경로도 이미 있다. 이것까지 FAIL 이면 인용만으로 커밋이 막힌다
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha', status: 'active',
+    inDeps: ['- [[ghost]] — MODULE.md 가 없는 곳'],
+  });
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 0, out);
+  assert.ok(has(out, 'WARN', 'alpha', 'R3'), out);
+});

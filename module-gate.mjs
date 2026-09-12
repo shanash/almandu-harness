@@ -206,6 +206,8 @@ for (const m of modules) {
       const other = bySlug.get(dep);
       // 상대에 MODULE.md 가 없으면 모듈 후보다. 미결이 이미 그렇게 적어 뒀으면 침묵한다 —
       // 순환 의존을 양쪽에 적으면 조용해지는 것과 같은 원리로, 아는 사실을 두 번 말하게 하지 않는다
+      // 이 경고만 `status` 와 무관하게 WARN 이다 — 상대가 아직 모듈이 아니라는 안내이지
+      // 이 계약의 결함이 아니고, 미결에 적으면 침묵하는 승인 경로가 이미 있다
       if (!other) {
         if (!namedAsCandidate(m, dep)) report('WARN', slug, 'R3', `${dir} [[${dep}]] 에 MODULE.md 없음 — 모듈 후보`);
         continue;
@@ -269,10 +271,10 @@ for (const m of modules) {
       // 해석 실패는 "기준이 다름" 과 다른 사고다 — 정정할 대상이 없고, evidenceRefs 가 버리므로
       // R6·R8·R11 도 그 인용을 못 본다. 침묵하면 틀린 경로가 계약서에 눌러앉는다
       if (!resolved)
-        report('WARN', slug, 'R12', `${id} 근거 경로 "${p}" 가 어디로도 해석되지 않음 — 파일이 없거나 경로가 틀렸다. R11 도 이 파일을 추적하지 못한다`);
+        report(lvl(m), slug, 'R12', `${id} 근거 경로 "${p}" 가 어디로도 해석되지 않음 — 파일이 없거나 경로가 틀렸다. R11 도 이 파일을 추적하지 못한다`);
       else if (resolved !== p) {
         if (fix) fixQueue.set(m.file, [...(fixQueue.get(m.file) ?? []), p]);
-        else report('WARN', slug, 'R12', `${id} 근거 경로 "${p}" 가 리포 루트 기준이 아님 → "${resolved}"`);
+        else report(lvl(m), slug, 'R12', `${id} 근거 경로 "${p}" 가 리포 루트 기준이 아님 → "${resolved}"`);
       }
     }
     // R6 검증 근거가 다른 모듈에 있으면 그 모듈이 out 에 있어야 함. 자기 자신과 조상(공용 테스트 보관처)은 제외
@@ -282,11 +284,11 @@ for (const m of modules) {
       // 부모-자식은 스키마가 in/out 링크를 금하므로 조상 면제는 양방향이다.
       // 방향(in/out)이 맞는지는 R3 이 보므로 여기서는 둘 중 하나에 있기만 하면 된다
       if (!isAncestor(m, owner) && !m.out.includes(owner.fm.module) && !m.in.includes(owner.fm.module))
-        report('WARN', slug, 'R6', `${id} 근거 ${ref.file} 가 [[${owner.fm.module}]] 소유이지만 의존에 없음`);
+        report(lvl(m), slug, 'R6', `${id} 근거 ${ref.file} 가 [[${owner.fm.module}]] 소유이지만 의존에 없음`);
       // R8 같은 파일:라인을 두 모듈이 불변식 근거로 인용 — 중복 계약
       const key = `${ref.file}:${ref.line ?? ''}`;   // 줄번호 없는 인용은 파일 전체가 하나의 인용 지점이다
       const seen = evidenceIndex.get(key);
-      if (seen && seen.mod !== m) report('WARN', slug, 'R8', `${id} 근거 ${key} 가 [[${seen.mod.fm.module}]] ${seen.id} 와 중복 — 깊은 소유자에 남기고 폐기 표시`);
+      if (seen && seen.mod !== m) report(lvl(m), slug, 'R8', `${id} 근거 ${key} 가 [[${seen.mod.fm.module}]] ${seen.id} 와 중복 — 깊은 소유자에 남기고 폐기 표시`);
       else if (!seen) evidenceIndex.set(key, { mod: m, id });
     }
   }
