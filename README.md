@@ -6,6 +6,8 @@
 - MODULE-schema-v1.md — 계약 스키마 (v0는 히스토리용 보관)
 - module-gate.mjs — 계약 게이트
 - module-gate.test.mjs — 게이트 자신의 회귀 테스트 (이 리포의 계약서를 입력으로 쓰지 않는다)
+- observations/ — 게이트를 실제로 돌려 보고 남긴 관찰. 규칙이 왜 생겼는지의 출처다.
+  작업 로그가 아니므로 여기 있다 — 그쪽은 `.am/` 이고 gitignored 다
 
 `/module-draft` 커맨드는 Claude Code가 정한 경로라 `.claude/commands/` 에 둔다.
 분리 시 플러그인이 커맨드를 제공하게 되면 그때 흡수한다.
