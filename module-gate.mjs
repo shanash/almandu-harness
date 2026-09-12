@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // module-gate.mjs — MODULE.md 계약 게이트 (스키마 v1)
-// 사용: node .harness/module-gate.mjs            (작업 트리 vs HEAD)
-//       node .harness/module-gate.mjs --staged   (pre-commit)
-//       node .harness/module-gate.mjs --base origin/main   (CI)
-//       node .harness/module-gate.mjs --fix      (R12 근거 경로를 리포 루트 기준으로 자동 정정)
-//       node .harness/module-gate.mjs --audit    (diff 무관: 인용 줄이 실물을 가리키는지 전수 대조)
+// 사용: npx module-gate            (작업 트리 vs HEAD)
+//       npx module-gate --staged   (pre-commit)
+//       npx module-gate --base origin/main   (CI)
+//       npx module-gate --fix      (R12 근거 경로를 리포 루트 기준으로 자동 정정)
+//       npx module-gate --audit    (diff 무관: 인용 줄이 실물을 가리키는지 전수 대조)
 // 종료 코드: FAIL 1개 이상이면 1
 import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -172,8 +172,8 @@ const pkgDeps = (() => {
 const isAncestor = (a, m) => a !== m && (a.dir === '' || m.dir.startsWith(a.dir + '/'));
 
 // m 의 미결이 slug 를 이미 모듈 후보로 적어 뒀는가 — R3 "MODULE.md 없음" 경고의 침묵 조건.
-// 줄이 "모듈" 을 말하면서 그 경로를 적고 있어야 한다. 미결 표기(`.harness/`, `Assets/Scripts/Data`)와
-// 슬러그(harness, data)가 다르므로 경로의 마지막 조각만 벗겨 대조한다.
+// 줄이 "모듈" 을 말하면서 그 경로를 적고 있어야 한다. 미결 표기(`Assets/Scripts/Data`)와 슬러그(data)가
+// 다르므로 경로의 마지막 조각만 벗겨 대조한다. 끝 슬래시와 숨은 디렉토리 표기의 앞 점도 함께 벗긴다.
 const namedAsCandidate = (m, slug) =>
   m.pending.split('\n').some((line) =>
     /^- /.test(line) && line.includes('모듈') &&

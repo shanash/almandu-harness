@@ -4,7 +4,7 @@
 프로젝트 고유 내용은 담지 않는다 — MODULE.md·CLAUDE.md 는 각 모듈 디렉토리에 남는다.
 
 - MODULE.md·CLAUDE.md — 이 리포 자신의 계약 (슬러그 `harness`)
-- MODULE-schema-v1.md — 계약 스키마. 계약을 쓸 때 읽는 규칙서 (v0 는 히스토리용 보관)
+- MODULE-schema-v1.md — 계약 스키마. 계약을 쓸 때 읽는 규칙서
 - module-gate.mjs — 게이트 (R0~R14)
 - module-gate.test.mjs — 게이트 자신의 회귀 테스트. 어느 리포의 계약서도 입력으로 쓰지 않는다
 - observations/ — 게이트를 실제로 돌려 보고 남긴 관찰. 규칙이 왜 생겼는지의 출처다

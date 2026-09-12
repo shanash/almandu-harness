@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // module-gate.test.mjs — 게이트 자신의 회귀 테스트
-// 사용: node --test .harness/module-gate.test.mjs
+// 사용: npm test   (node --test module-gate.test.mjs)
 //
 // 임시 git 저장소에 fixture 모듈을 세우고 규칙별로 우는지·조용한지 본다.
 // 이 리포의 계약서를 판정하지 않는다 — 계약서가 바뀌어도 이 테스트는 그대로여야 하고,
-// .harness/ 가 별도 저장소로 나갈 때 이 파일이 게이트를 따라간다.
+// 게이트가 어느 저장소로 가든 이 파일이 함께 간다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, execSync } from 'node:child_process';
