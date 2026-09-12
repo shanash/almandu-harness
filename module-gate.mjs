@@ -118,11 +118,22 @@ const resolveEvidencePath = (m, p) => {
   return null;
 };
 
-// 근거 문자열에서 파일:라인 토큰 추출 → [{file, line}] (file 은 리포 상대)
-// 라인은 76, 76-81, 76,81 형태를 모두 받는다. 범위는 시작 라인을 키로 쓴다.
+// 근거 인용 토큰. 줄번호는 선택이다 — `파일.cs` 단독과 `파일.py::테스트명` 도 인용이고,
+// 줄번호를 요구하면 그런 인용이 R6·R8·R11·R12 전부에 보이지 않는다.
+// 확장자를 소문자로 묶어 `LeAction.MakerDictionaryInit` 같은 멤버 표기와 가른다 —
+// 그것까지 파일로 주우면 해석 실패 경고가 문장마다 뜬다.
+const EVIDENCE_RE = /([\w.\-\/]+\.[a-z][a-z0-9]{1,6})(?![\w.\-])(?::(\d+(?:[-,]\d+)*))?/g;
+
+// 근거 문자열에서 인용 토큰 추출 → [{file, line, spec}] (file 은 리포 상대)
+// spec 은 적힌 그대로의 줄 표기(76, 76-81, 76,81)이고 line 은 그 시작 줄 — 키로 쓴다.
+// 줄번호 없는 인용은 line·spec 이 null 이다.
 const evidenceRefs = (m, evidence) =>
-  [...evidence.matchAll(/([\w.\-\/]+\.[A-Za-z]+):(\d+)(?:[-,]\d+)*/g)]
-    .map(([, f, l]) => ({ file: resolveEvidencePath(m, f), line: l }))
+  [...evidence.matchAll(EVIDENCE_RE)]
+    .map(([, f, spec]) => ({
+      file: resolveEvidencePath(m, f),
+      line: spec ? spec.match(/^\d+/)[0] : null,
+      spec: spec ?? null,
+    }))
     .filter((r) => r.file);
 
 // ---------- 규칙 ----------
@@ -213,7 +224,7 @@ for (const m of modules) {
     if (!/\[(테스트|grep|리뷰)\]/.test(inv)) report(lvl(m), slug, 'R5', `${id} 검증 수단 태그 없음`);
     const evidence = inv.match(/근거:\s*([^)]*)\)/)?.[1] ?? '';
     // R12 근거 경로는 리포 루트 기준으로 적는다 (v1 규칙). 상대 경로는 해석은 되지만 기준이 흔들린다
-    for (const [, p] of evidence.matchAll(/([\w.\-\/]+\.[A-Za-z]+):\d+/g)) {
+    for (const [, p] of evidence.matchAll(EVIDENCE_RE)) {
       const resolved = resolveEvidencePath(m, p);
       // 해석 실패는 "기준이 다름" 과 다른 사고다 — 정정할 대상이 없고, evidenceRefs 가 버리므로
       // R6·R8·R11 도 그 인용을 못 본다. 침묵하면 틀린 경로가 계약서에 눌러앉는다
@@ -233,7 +244,7 @@ for (const m of modules) {
       if (!isAncestor(m, owner) && !m.out.includes(owner.fm.module) && !m.in.includes(owner.fm.module))
         report('WARN', slug, 'R6', `${id} 근거 ${ref.file} 가 [[${owner.fm.module}]] 소유이지만 의존에 없음`);
       // R8 같은 파일:라인을 두 모듈이 불변식 근거로 인용 — 중복 계약
-      const key = `${ref.file}:${ref.line}`;
+      const key = `${ref.file}:${ref.line ?? ''}`;   // 줄번호 없는 인용은 파일 전체가 하나의 인용 지점이다
       const seen = evidenceIndex.get(key);
       if (seen && seen.mod !== m) report('WARN', slug, 'R8', `${id} 근거 ${key} 가 [[${seen.mod.fm.module}]] ${seen.id} 와 중복 — 깊은 소유자에 남기고 폐기 표시`);
       else if (!seen) evidenceIndex.set(key, { mod: m, id });
@@ -274,11 +285,13 @@ if (fix && fixQueue.size) {
     for (const p of [...new Set(paths)].sort((a, b) => b.length - a.length)) {
       const resolved = resolveEvidencePath(m, p);
       if (!resolved || resolved === p) continue;
-      // "근거:" 가 있는 줄에서, 뒤에 :숫자 가 오는 경우만 치환
+      // "근거:" 가 있는 줄에서 경로 토큰 하나를 통째로 치환. 앞뒤 경계를 막지 않으면
+      // 짧은 경로가 이미 정정된 긴 경로의 꼬리를 다시 먹는다 (p 는 resolved 의 접미사다)
+      const token = new RegExp(`(^|[^\\w.\\-/])${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.\\-/])`, 'g');
       text = text.split('\n').map((line) => {
         if (!/근거:/.test(line)) return line;
         const before = line;
-        line = line.split(`${p}:`).join(`${resolved}:`);
+        line = line.replace(token, (_, pre) => `${pre}${resolved}`);
         if (line !== before) n++;
         return line;
       }).join('\n');

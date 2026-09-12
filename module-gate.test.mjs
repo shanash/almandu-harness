@@ -300,3 +300,46 @@ test('R12 는 해석되지만 기준이 다른 경로와 해석 실패를 구분
   assert.match(out, /리포 루트 기준이 아님/);
   assert.ok(!/해석되지 않/.test(out), out);
 });
+
+test('줄번호 없는 인용도 근거다 — R6 이 본다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. beta 전체에 기댄다 (근거: beta/b.cs) [grep]'],   // 줄번호 없음
+  });
+  putModule(r.dir, { slug: 'beta', path: 'beta' });
+  write(r.dir, 'beta/b.cs', 'class B {}\n');
+  r.commit();
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R6'), out);
+});
+
+test('pytest 노드 ID(`파일.py::테스트명`) 인용도 R11 이 추적한다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    inDeps: ['- [[beta]] — beta 를 쓴다'],
+    invariants: ['- I1. 그 테스트가 지킨다 (근거: beta/t_b.py::test_b) [테스트]'],
+  });
+  putModule(r.dir, { slug: 'beta', path: 'beta', outDeps: ['- [[alpha]] — alpha 가 쓴다'] });
+  write(r.dir, 'beta/t_b.py', 'def test_b(): pass\n');
+  r.commit();
+  write(r.dir, 'beta/t_b.py', 'def test_b(): assert True\n');
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R11'), out);
+});
+
+test('심볼의 점 표기는 근거 파일로 오인되지 않는다', (t) => {
+  // 줄번호를 요구하지 않게 넓히면 `LeAction.MakerDictionaryInit` 같은 멤버 표기가
+  // 파일처럼 보인다. 그것까지 주우면 R12 해석 실패 경고가 문장마다 뜬다
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. `LeAction.MakerDictionaryInit` 과 `actionStruct.fullOuterArgument` 를 쓴다 (근거: alpha/a.cs:1) [grep]'],
+  });
+  write(r.dir, 'alpha/a.cs', 'class A {}\n');
+  r.commit();
+  const { code, out } = gate(r.dir);
+  assert.equal(code, 0, out);
+  assert.ok(!/R12/.test(out), out);
+});
