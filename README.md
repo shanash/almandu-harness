@@ -29,10 +29,14 @@ npx module-gate --staged         # 인덱스만 (pre-commit)
 npx module-gate --base origin/main
 npx module-gate --fix            # R12 근거 경로 자동 정정
 npx module-gate --audit          # diff 무관: 인용 줄이 실물을 가리키는지 전수 대조
-npm test                         # 회귀 테스트 45개, ~32초
+npx module-gate --json           # 같은 판정을 기계 판독 형태로 (stdout 전용)
+npx module-gate --scope <경로>... # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
+npm test                         # 회귀 테스트 52개, ~37초
 ```
 
 의존은 node 표준 라이브러리와 `git` CLI 뿐이다. 종료 코드로만 말한다 — FAIL 이 하나라도 있으면 1.
+`--json` 도 마찬가지다. 봉투의 `fail` 은 종료 코드와 같은 말이고, 그것이 부르는 쪽이 판정을 다시
+내리지 못하게 막는 유일한 장치다.
 
 커밋 경로가 둘이면 모드가 다르다는 것을 기억할 것. pre-commit 훅은 `--staged` 로 인덱스만 보고,
 러너(AlMandu PreToolUse 등)에서 부르면 대개 작업 트리 모드다 — 스테이지하지 않은 `status: active`
@@ -53,3 +57,6 @@ MODULE.md 는 스스로 실리지 않는다. 같은 디렉토리의 CLAUDE.md �
 그 사이를 막는 것은 루트 CLAUDE.md 의 "파일을 고치기 전에 그 파일을 소유한 가장 깊은 MODULE.md 를
 읽는다" 한 줄뿐이다 — 자동 로드가 아니라 사람과 에이전트의 습관에 기대고 있다. 어댑터 문구를
 바이트 단위로 같게 유지하는 이유도 이것이다. 로드되는 자리마다 같은 문장이 와야 한다.
+
+`--scope` 는 그 습관을 기계로 옮기기 위한 표면이다 — 어느 계약을 열어야 하는지를 게이트가 답한다.
+아직 부르는 쪽이 없어 구멍은 그대로 열려 있다 (DESIGN.md 4b).

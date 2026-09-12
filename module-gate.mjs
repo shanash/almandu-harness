@@ -5,17 +5,30 @@
 //       npx module-gate --base origin/main   (CI)
 //       npx module-gate --fix      (R12 근거 경로를 리포 루트 기준으로 자동 정정)
 //       npx module-gate --audit    (diff 무관: 인용 줄이 실물을 가리키는지 전수 대조)
+//       npx module-gate --json     (같은 판정을 기계 판독 형태로 — 종료 코드는 그대로다)
+//       npx module-gate --scope <경로>...  (판정하지 않는다: 그 경로를 고치려면 읽어야 할 계약)
 // 종료 코드: FAIL 1개 이상이면 1
 import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join, relative, dirname } from 'node:path';
+import { join, relative, dirname, resolve } from 'node:path';
 
 const args = process.argv.slice(2);
 const staged = args.includes('--staged');
 const fix = args.includes('--fix');
 const audit = args.includes('--audit');
+const json = args.includes('--json');
+// `--scope` 는 가변 인자다. 다음 플래그를 만나면 멈춘다 — 멈추지 않으면 `--scope a --base main`
+// 에서 `main` 을 경로로 주워 간다
+const scopeArgs = (() => {
+  const i = args.indexOf('--scope');
+  if (i < 0) return null;
+  const out = [];
+  for (let k = i + 1; k < args.length && !args[k].startsWith('--'); k++) out.push(args[k]);
+  return out;
+})();
 const baseIdx = args.indexOf('--base');
 const base = baseIdx >= 0 ? args[baseIdx + 1] : 'HEAD';
+const mode = scopeArgs ? 'scope' : audit ? 'audit' : staged ? 'staged' : baseIdx >= 0 ? 'base' : 'worktree';
 const MAX_LINES = 80;
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'Library', 'Temp', 'obj', 'Logs', 'builds']);
 // R1 이 "코드 변경"으로 보는 것. 모듈별로 frontmatter `watch: .cs,.shader` 로 덮어쓸 수 있다
@@ -98,6 +111,37 @@ function parseModule(relPath, text) {
 const modules = findModules(root).map((p) => parseModule(p, readFileSync(join(root, p), 'utf8')));
 const bySlug = new Map(modules.map((m) => [m.fm.module, m]));
 
+// 파일이 이 모듈의 소유 범위 안인가. ownerOf 와 --scope 가 같은 답을 내야 하므로 한 곳에 둔다
+const inside = (m, file) => m.dir === '' || file === m.dir || file.startsWith(m.dir + '/');
+
+// ---------- --scope: 이 경로를 고치려면 무엇을 읽어야 하는가 ----------
+// 판정하지 않는다 — ownerOf 를 CLI 표면으로 한 번 더 내는 것이고 종료 코드는 언제나 0 이다.
+// 소유 계약과 그 조상을 깊은 것부터 낸다. 하나만 낼지 조상까지 낼지는 아직 안 정했고
+// (DESIGN.md 4절), 체인을 통째로 내면 부르는 쪽이 앞에서 잘라 쓸 수 있어 어느 쪽도 막지 않는다.
+// 경로가 실재하지 않아도 답한다 — 아직 없는 파일의 소유도 디렉토리 접두사가 정한다
+if (scopeArgs) {
+  const entries = scopeArgs.map((p) => {
+    const rel = toPosix(relative(root, resolve(process.cwd(), p)));
+    // 리포 밖 경로에는 소유자가 없다. 오류로 다루지 않는다 — 이 모드는 판정하지 않는다
+    const chain = rel.startsWith('../') ? []
+      : modules.filter((m) => inside(m, rel)).sort((a, b) => b.dir.length - a.dir.length);
+    return { path: rel, owner: chain[0]?.fm.module ?? null, contracts: chain.map((m) => m.file) };
+  });
+  const byFile = new Map(modules.map((m) => [m.file, m]));
+  const union = [...new Set(entries.flatMap((e) => e.contracts))]
+    .sort((a, b) => byFile.get(b).dir.length - byFile.get(a).dir.length);
+  if (json) {
+    process.stdout.write(JSON.stringify({ schema: 1, mode, paths: entries, contracts: union }) + '\n');
+    process.exit(0);
+  }
+  for (const e of entries) {
+    console.log(`scope ${e.path} → ${e.owner ? `[[${e.owner}]]` : '소유 모듈 없음'}`);
+    for (const c of e.contracts) console.log(`  ${c}`);
+  }
+  console.log(`\nmodule-gate --scope: 계약 ${union.length}개 — Read 로 열어야 어댑터가 함께 실린다`);
+  process.exit(0);
+}
+
 // ---------- 변경 파일 ----------
 const diffCmd = staged ? 'git diff --cached --name-only' : `git diff --name-only ${base}`;
 const untrackedAll = sh('git ls-files --others --exclude-standard');
@@ -112,10 +156,7 @@ const changedSet = new Set(changed);
 // 변경 파일을 가장 깊은 모듈에 귀속
 const ownerOf = (file) => {
   let best = null;
-  for (const m of modules) {
-    const inside = m.dir === '' || file === m.dir || file.startsWith(m.dir + '/');
-    if (inside && (best === null || m.dir.length > best.dir.length)) best = m;
-  }
+  for (const m of modules) if (inside(m, file) && (best === null || m.dir.length > best.dir.length)) best = m;
   return best;
 };
 
@@ -275,18 +316,29 @@ if (audit) {
         for (const part of ref.spec.split(',')) {
           const [a, b] = part.includes('-') ? part.split('-').map(Number) : [Number(part), Number(part)];
           if (a > lines.length)
-            findings.push(`${slug.padEnd(16)} ${id.padEnd(4)} ${ref.file}:${part} — 파일은 ${lines.length}줄뿐이다`);
+            findings.push({ slug, id, at: `${ref.file}:${part}`, why: `파일은 ${lines.length}줄뿐이다` });
           else if (lines.slice(a - 1, b).every((l) => NOTHING.test(l)))
-            findings.push(`${slug.padEnd(16)} ${id.padEnd(4)} ${ref.file}:${part} — 빈 줄·중괄호뿐이라 아무것도 주장하지 못한다`);
+            findings.push({ slug, id, at: `${ref.file}:${part}`, why: '빈 줄·중괄호뿐이라 아무것도 주장하지 못한다' });
         }
       }
     }
+  }
+  // 감사 소견은 status 와 무관하게 실행을 실패시키므로 JSON 에서는 FAIL 로 낸다 —
+  // `fail > 0` 과 종료 코드 1 이 어느 모드에서나 같은 뜻이어야 부르는 쪽이 둘 중 하나만 봐도 된다.
+  // rule 은 모드 이름 하나다: 감사는 어느 규칙의 판정도 아니고, 불변식 ID 는 message 에 남는다
+  if (json) {
+    process.stdout.write(JSON.stringify({
+      schema: 1, mode, modules: modules.length, changed: changed.length,
+      results: findings.map((f) => ({ level: 'FAIL', module: f.slug, rule: 'AUDIT', message: `${f.id} ${f.at} — ${f.why}` })),
+      fail: findings.length, warn: 0,
+    }) + '\n');
+    process.exit(findings.length ? 1 : 0);
   }
   if (!findings.length) {
     console.log(`module-gate --audit: OK (${modules.length} modules, 인용 줄 전수 대조)`);
     process.exit(0);
   }
-  for (const f of findings) console.log(`AUDIT  ${f}`);
+  for (const f of findings) console.log(`AUDIT  ${f.slug.padEnd(16)} ${f.id.padEnd(4)} ${f.at} — ${f.why}`);
   console.log(`\nmodule-gate --audit: ${findings.length}건 — 문장과 대조해 밀린 줄번호를 옮겨라 (계약 문장은 대개 그대로다)`);
   process.exit(1);
 }
@@ -527,14 +579,26 @@ if (fix && fixQueue.size) {
       }).join('\n');
     }
     writeFileSync(join(root, file), text);
-    console.log(`FIX  ${file}  근거 경로 ${n}곳 정정`);
+    // --json 과 함께 쓰면 stdout 은 JSON 만 담아야 한다. 정정 알림은 판정이 아니므로 stderr 로 보낸다
+    (json ? console.error : console.log)(`FIX  ${file}  근거 경로 ${n}곳 정정`);
   }
-  console.log('\n정정 후 이력에 한 줄 추가하고 다시 실행하세요 (계약 문장은 바뀌지 않았습니다).');
+  (json ? console.error : console.log)('\n정정 후 이력에 한 줄 추가하고 다시 실행하세요 (계약 문장은 바뀌지 않았습니다).');
 }
 
 // ---------- 출력 ----------
+// --json 은 같은 판정을 다른 표면으로 낼 뿐이다. 종료 코드가 유일한 차단 수단이라는 I2 도,
+// 판단을 파일에 쓰지 않는다는 I5 도 그대로다 — stdout 전용이고 `--out` 같은 옵션은 두지 않는다.
+// message 는 사람에게 가는 한국어 문장이고 계속 바뀐다: 부르는 쪽은 rule·module 로만 분기한다
+const fails = results.filter((r) => r.level === 'FAIL').length;
+if (json) {
+  process.stdout.write(JSON.stringify({
+    schema: 1, mode, modules: modules.length, changed: changed.length,
+    results: results.map((r) => ({ level: r.level, module: r.mod, rule: r.rule, message: r.msg })),
+    fail: fails, warn: results.length - fails,
+  }) + '\n');
+  process.exit(fails ? 1 : 0);
+}
 if (!results.length) { console.log(`module-gate: OK (${modules.length} modules, ${changed.length} changed files)`); process.exit(0); }
 for (const r of results) console.log(`${r.level.padEnd(4)} ${r.mod.padEnd(24)} ${r.rule}  ${r.msg}`);
-const fails = results.filter((r) => r.level === 'FAIL').length;
 console.log(`\nmodule-gate: ${fails} FAIL, ${results.length - fails} WARN`);
 process.exit(fails ? 1 : 0);

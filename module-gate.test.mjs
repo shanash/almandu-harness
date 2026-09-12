@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, execSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -742,4 +742,104 @@ test('R13 은 해석되지 않는 재현 범위를 경고한다', (t) => {
   const { out } = gate(r.dir);
   assert.ok(has(out, 'WARN', 'alpha', 'R13'), out);
   assert.match(out, /범위/);
+});
+
+// ---------- 4a: 기계 판독 표면 ----------
+// 판정은 늘리지 않는다. 같은 결론을 다른 표면으로 낼 뿐이므로 테스트가 묻는 것도
+// "텍스트와 같은 말을 하는가" 와 "종료 코드가 그대로인가" 둘이다
+
+test('--json 은 깨끗한 트리를 빈 results 로 내고 0 으로 끝난다', (t) => {
+  const r = twoModules(t);
+  const { code, out } = gate(r.dir, '--json');
+  assert.equal(code, 0, out);
+  const j = JSON.parse(out);
+  assert.deepEqual(j.results, []);
+  assert.equal(j.fail, 0);
+  assert.equal(j.mode, 'worktree');
+  assert.equal(j.modules, 2);
+});
+
+test('--json 은 텍스트와 같은 판정을 내고 종료 코드도 같다', (t) => {
+  const r = twoModules(t, { alphaStatus: 'active' });
+  write(r.dir, 'alpha/a.cs', 'class A { int x; }\n');
+  const text = gate(r.dir);
+  const jsonRun = gate(r.dir, '--json');
+  assert.equal(jsonRun.code, text.code);
+  assert.equal(jsonRun.code, 1, jsonRun.out);
+  const j = JSON.parse(jsonRun.out);
+  assert.equal(j.fail, 1);
+  assert.deepEqual(j.results.map((x) => [x.level, x.module, x.rule]), [['FAIL', 'alpha', 'R1']]);
+  // 텍스트 줄과 같은 판정이다 — 부르는 쪽이 둘 중 어느 표면을 봐도 결론이 같아야 한다
+  assert.ok(has(text.out, 'FAIL', 'alpha', 'R1'), text.out);
+});
+
+test('--json 의 stdout 은 JSON 뿐이다 — --fix 의 정정 알림이 섞이지 않는다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. 상대 경로로 적었다 (근거: a.cs:1) [grep]'],
+  });
+  write(r.dir, 'alpha/a.cs', 'class A {}\n');
+  r.commit();
+  const { code, out } = gate(r.dir, '--fix', '--json');
+  assert.equal(code, 0, out);
+  const j = JSON.parse(out);                    // 앞뒤에 한 줄이라도 섞이면 여기서 터진다
+  assert.equal(j.fail, 0);
+  assert.match(readFileSync(join(r.dir, 'alpha/MODULE.md'), 'utf8'), /근거: alpha\/a\.cs:1/);
+});
+
+test('--audit --json 은 감사 소견을 FAIL 로 내고 1 로 끝난다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. 없는 줄을 가리킨다 (근거: alpha/a.cs:99) [grep]'],
+  });
+  write(r.dir, 'alpha/a.cs', 'class A {}\n');
+  r.commit();
+  const { code, out } = gate(r.dir, '--audit', '--json');
+  assert.equal(code, 1, out);
+  const j = JSON.parse(out);
+  assert.equal(j.mode, 'audit');
+  // fail > 0 과 종료 코드 1 은 어느 모드에서나 같은 뜻이어야 한다
+  assert.equal(j.fail, 1);
+  assert.deepEqual(j.results.map((x) => [x.level, x.module, x.rule]), [['FAIL', 'alpha', 'AUDIT']]);
+  assert.match(j.results[0].message, /I1 alpha\/a\.cs:99/);
+});
+
+test('--scope 는 소유 계약과 조상을 깊은 것부터 내고 판정하지 않는다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'root', path: '.' });
+  putModule(r.dir, { slug: 'alpha', path: 'alpha', status: 'active' });
+  write(r.dir, 'alpha/a.cs', 'class A {}\n');
+  r.commit();
+  write(r.dir, 'alpha/a.cs', 'class A { int x; }\n');   // active 모듈의 소스 변경 = 평소라면 R1 FAIL
+  const plain = gate(r.dir);
+  assert.equal(plain.code, 1, plain.out);               // 판정 모드는 운다
+  const { code, out } = gate(r.dir, '--scope', 'alpha/a.cs', '--json');
+  assert.equal(code, 0, out);                           // --scope 는 판정하지 않는다
+  const j = JSON.parse(out);
+  assert.equal(j.mode, 'scope');
+  assert.deepEqual(j.paths, [{ path: 'alpha/a.cs', owner: 'alpha', contracts: ['alpha/MODULE.md', 'MODULE.md'] }]);
+  assert.deepEqual(j.contracts, ['alpha/MODULE.md', 'MODULE.md']);
+});
+
+test('--scope 는 아직 없는 경로에도 답한다 — 새 파일의 소유는 디렉토리가 정한다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha' });
+  r.commit();
+  const { code, out } = gate(r.dir, '--scope', 'alpha/deep/new.cs', '--json');
+  assert.equal(code, 0, out);
+  const j = JSON.parse(out);
+  assert.equal(j.paths[0].owner, 'alpha');
+  assert.deepEqual(j.paths[0].contracts, ['alpha/MODULE.md']);
+});
+
+test('--scope 의 경로 목록은 다음 플래그에서 멈춘다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha' });
+  r.commit();
+  // 멈추지 않으면 `HEAD` 를 경로로 주워 소유 모듈 없는 항목이 하나 더 생긴다
+  const { code, out } = gate(r.dir, '--scope', 'alpha/a.cs', '--base', 'HEAD', '--json');
+  assert.equal(code, 0, out);
+  assert.equal(JSON.parse(out).paths.length, 1);
 });

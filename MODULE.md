@@ -12,22 +12,23 @@ MODULE.md 계약 체계 자체를 소유한다 — 스키마(`MODULE-schema-v1.m
 프로젝트 고유 규칙은 담지 않는다 — 각 디렉토리의 MODULE.md·CLAUDE.md 는 그 디렉토리에 남고, 커밋을 실제로 막는 훅은 이 게이트를 설치한 리포에 있다. 이 패키지는 판정만 하고 차단은 종료 코드로 넘긴다.
 
 ## 진입점
-- `npx module-gate [--staged|--base <ref>|--fix|--audit]` — module-gate.mjs:536,540 (판정 결과를 종료 코드로 낸다)
-- `npm test` (node --test module-gate.test.mjs) — module-gate.test.mjs:16 (게이트의 회귀 테스트 45개)
+- `npx module-gate [--staged|--base <ref>|--fix|--audit|--json]` — module-gate.mjs:599,601,604 (판정 결과를 종료 코드로 낸다)
+- `npx module-gate --scope <경로>...` — module-gate.mjs:122 (판정하지 않는다: 그 경로를 고치려면 읽어야 할 계약을 깊은 것부터 낸다)
+- `npm test` (node --test module-gate.test.mjs) — module-gate.test.mjs:16 (게이트의 회귀 테스트 52개)
 - `MODULE-schema-v1.md` — 사람과 에이전트가 계약을 쓸 때 읽는 규칙서
 
 ## 의존
 ### in (이 모듈이 쓰는 것)
-- 없음. node 표준 라이브러리 세 모듈과 `git` CLI 만 쓴다 — 설치할 의존이 없어 어느 클론에서나 그대로 돈다 (module-gate.mjs:9-11)
+- 없음. node 표준 라이브러리 세 모듈과 `git` CLI 만 쓴다 — 설치할 의존이 없어 어느 클론에서나 그대로 돈다 (module-gate.mjs:11-13)
 ### out (이 모듈을 쓰는 것)
 - 없음 — 이 패키지를 쓰는 리포가 자기 `in` 에 `(외부: module-harness)` 로 적는다. 소비자를 여기 세면 리포가 늘 때마다 거짓이 된다 (R14)
 
 ## 불변식
-- I1. 판정 수준은 `status` 로만 갈린다 — `active` 는 FAIL, 그 외는 WARN 으로 강등된다. 예외는 R3 의 모듈 후보 경고 하나로 언제나 WARN 이다 (근거: module-gate.mjs:242-243,344-347, module-gate.test.mjs:126,617) [테스트]
-- I2. 차단 수단은 종료 코드뿐이다 — FAIL 이 하나라도 있으면 1, 없으면 0 이고 WARN 은 0 이다 (근거: module-gate.mjs:536,540) [grep]
+- I1. 판정 수준은 `status` 로만 갈린다 — `active` 는 FAIL, 그 외는 WARN 으로 강등된다. 예외는 R3 의 모듈 후보 경고 하나로 언제나 WARN 이다 (근거: module-gate.mjs:283-284,396-399, module-gate.test.mjs:126,617) [테스트]
+- I2. 차단 수단은 종료 코드뿐이다 — FAIL 이 하나라도 있으면 1, 없으면 0 이고 WARN 은 0 이다. `--json` 은 같은 판정을 다른 표면으로 낼 뿐이라 봉투의 `fail` 이 종료 코드와 동치다 (근거: module-gate.mjs:594-599,601,604) [테스트]
 - I3. 회귀 테스트는 이 리포의 계약서를 입력으로 쓰지 않는다 — 임시 git 저장소에 fixture 를 세워 돌리므로 계약서가 바뀌어도 테스트는 그대로다 (근거: module-gate.test.mjs:5-7,16) [테스트]
-- I4. 게이트는 외부 의존 없이 돈다 — import 는 node 표준 세 줄이고 나머지는 `git` 서브프로세스다 (근거: module-gate.mjs:9-11, 재현: module-gate.mjs 에서 `from 'node:` 3건) [grep]
-- I5. 게이트는 자기 판단을 파일에 쓰지 않는다 — 유일한 쓰기는 `--fix` 의 근거 경로 정정이고 그것도 `근거:` 가 있는 줄만 건드린다 (근거: module-gate.mjs:518-522,529) [리뷰]
+- I4. 게이트는 외부 의존 없이 돈다 — import 는 node 표준 세 줄이고 나머지는 `git` 서브프로세스다 (근거: module-gate.mjs:11-13, 재현: module-gate.mjs 에서 `from 'node:` 3건) [grep]
+- I5. 게이트는 자기 판단을 파일에 쓰지 않는다 — 유일한 쓰기는 `--fix` 의 근거 경로 정정이고 그것도 `근거:` 가 있는 줄만 건드린다 (근거: module-gate.mjs:570-574,581) [리뷰]
 
 ## 미결
 - R13 의 비용은 건수가 아니라 범위 폭이다 (2026-09-12 실측: 모듈 디렉토리 범위 25회 0.19s, `restored-project/Assets` 트리 범위 25회 3.2s). 예산을 64 로 올렸지만 통제는 "범위는 경로 하나" 규칙이 맡는다 — 트리 범위 주장이 여럿 생기면 그 규칙을 좁힐지 미결이고, 지금 그런 주장은 gameplay I2 하나다
@@ -35,6 +36,7 @@ MODULE.md 계약 체계 자체를 소유한다 — 스키마(`MODULE-schema-v1.m
 - 게이트가 자기 계약을 판정한다 — 이 계약서를 어기는 게이트 변경을 그 게이트가 잡을 수 있는지는 순환이고, fixture 테스트가 그 순환을 끊는 유일한 수단이다. 자기 판정의 사각지대 목록은 없다
 
 ## 이력
+- 2026-09-12 4a — 게이트에 기계 판독 표면 둘을 낸다 (DESIGN.md 4절). `--json` 은 같은 판정을 JSON 으로 낼 뿐이고 stdout 전용이다: 파일로 쓰지 않으므로 I5 가 서고, 봉투의 `fail` 이 종료 코드와 동치라 부르는 쪽이 JSON 을 읽고 스스로 통과를 선언할 길이 없다. 그 동치를 픽스처가 고정하므로 I2 의 검증 수단을 [grep] 에서 [테스트] 로 올렸다. `--scope <경로>` 는 판정하지 않고 소유 계약과 조상을 깊은 것부터만 낸다 — 조상까지 낼지는 여전히 미결이라(DESIGN 4절) 체인을 통째로 내어 부르는 쪽이 앞에서 자를 수 있게 했다. 소유 판정을 `ownerOf` 에서 `inside` 로 꺼낸 것은 두 표면이 다른 답을 내는 순간 `--scope` 가 거짓말을 하기 때문이다. 테스트 일곱을 더했다 (52개)
 - 2026-09-12 분리 잔재를 정리한다 (DESIGN.md 0단계). 사용법 주석·스키마 인용의 `.harness/` 접두사를 `npx module-gate` 와 리포 루트 기준으로 바꿨고, 어느 규칙도 읽지 않던 `MODULE-schema-v0.md` 를 지웠다 — 미결이 물어 온 "언제 버릴지" 의 답이고 히스토리에 남아 있다. `observations/` 의 옛 경로는 그대로 둔다: 관찰은 규칙이 아니라 당시의 증거라 고치면 증거가 아니게 된다
 - 2026-09-12 `DESIGN.md` 를 세우고 책임 칸에 그 자리를 적는다 — 분리 이후의 계획(게이트의 기계 판독 출력, scope→change→reconcile 루프, 태그 기반 리뷰, 패키지 운영)을 결정과 근거로 남긴다. `observations/` 가 "무엇이 일어났나" 를 갖고 이 파일이 "무엇을 하기로 했나" 를 가지므로 둘 다 재생성되지 않는 기록이고 같은 급이다. `watch` 에는 넣지 않았다 — 게이트를 고칠 때마다 계획 문서를 함께 요구하게 되고, 그건 계획이 아니라 세금이다
 - 2026-09-12 kod-remastered 의 `.harness/` 에서 떨어져 나와 npm 패키지가 됐다 (`module-harness`, bin `module-gate`). 히스토리 31 커밋은 subtree split 으로 따라왔고 `observations/` 도 함께 왔다. 계약서의 자리가 `.harness` 에서 리포 루트로 바뀌어 인용 경로에서 접두사를 벗겼고, `out [[tools]]` 는 없앴다 — 그 모듈은 이제 다른 리포에 있다
