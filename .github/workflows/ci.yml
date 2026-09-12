@@ -1,0 +1,54 @@
+# module-harness CI — DESIGN.md 7절
+# PR 은 diff 만 본다. 전수 감사(--audit)는 diff 와 무관하게 전부를 여는 모드라 nightly 로만 돈다:
+# 처음 돌렸을 때 나온 3건 중 하나는 그 작업과 무관하게 전부터 밀려 있던 것이었고,
+# 그런 것은 PR 을 막을 근거가 아니라 따로 쌓아 두고 볼 목록이다.
+name: contract
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 18 * * *'   # 03:00 KST
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # 게이트가 base 와 diff 를 뜬다
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm test
+
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # PR 은 base 와의 diff 를, push 는 작업 트리(= 그 커밋)를 본다
+      - name: 계약 판정
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            node module-gate.mjs --base "origin/${{ github.base_ref }}"
+          else
+            node module-gate.mjs --base HEAD~1
+          fi
+
+  audit:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # 밀린 인용은 쌓아 두고 보는 목록이다 — 여기서 실패해도 PR 을 막지 않는다
+      - run: node module-gate.mjs --audit

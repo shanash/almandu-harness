@@ -276,10 +276,12 @@ npm i -D github:shanash/module-harness#v0.2.0
 
 ### CI
 
+`.github/workflows/ci.yml` 이 이 셋을 돌린다 (2026-09-12):
+
 ```
-npm test                              # 45개, ~32초
+npm test                              # 85개, ~75초
 npx module-gate --base origin/main    # PR 이 계약을 어기는지
-npx module-gate --audit               # 전수 — nightly 로만
+npx module-gate --audit               # 전수 — nightly(03:00 KST)와 수동 실행만
 ```
 
 `--audit` 를 매 PR 에 걸지 않는 이유는 diff 와 무관하게 전부를 여는 모드라서다. 처음
@@ -294,6 +296,12 @@ PR 을 막을 근거가 아니라 따로 쌓아 두고 볼 목록이다.
 **게이트 바이너리에 넣지 않는다.** `module-gate --init` 로 만들면 판정 도구가 파일을
 쓰게 되고 I5 가 흐려진다(`--fix` 는 근거 경로만, `근거:` 있는 줄만 건드리는 예외다).
 별도 bin `module-harness-init` 으로 낸다.
+
+구현 (2026-09-12): 셋을 다 놓는다. 예상과 달랐던 것 하나 — **어댑터 문구를 설치 도구 안에 적지
+않았다.** 적으면 스키마와 두 판본이 생기고, 그때부터 "바이트 단위로 같게 유지한다" 는 사람이
+지키는 약속이 된다. 대신 `MODULE-schema-v1.md` 의 어댑터 블록을 읽어서 쓴다 — harness I6 이고,
+설치 도구가 스키마를 읽는 유일한 이유다. 이미 있는 파일은 덮어쓰지 않고, 이미 있는 CLAUDE.md
+에는 어댑터를 맨 앞에 얹는다(`@import` 는 위에 있어야 읽힌다). 두 번 돌려도 같은 상태다.
 
 ---
 

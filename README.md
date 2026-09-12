@@ -7,6 +7,8 @@
 - MODULE-schema-v1.md — 계약 스키마. 계약을 쓸 때 읽는 규칙서
 - module-gate.mjs — 게이트 (R0~R14)
 - module-gate.test.mjs — 게이트 자신의 회귀 테스트. 어느 리포의 계약서도 입력으로 쓰지 않는다
+- module-harness-init.mjs — 소비 리포에 훅·계약 문단·어댑터를 놓는 설치 도구
+- loop/ — 변경을 계약 앞에 세우는 루프 (패키지에는 실리지 않는다)
 - observations/ — 게이트를 실제로 돌려 보고 남긴 관찰. 규칙이 왜 생겼는지의 출처다
 
 ## 설치
@@ -21,6 +23,20 @@ npm i -D file:../module-harness    # 로컬 개발
 게이트는 `node_modules/` 를 걷지 않으므로 이 패키지의 계약서는 소비 리포의 판정 대상이 아니다 —
 그쪽 계약은 이 리포에서 판정된다.
 
+설치한 뒤 한 번 돌린다:
+
+```
+npx module-harness-init --dry-run   # 무엇을 놓을지 먼저 본다
+npx module-harness-init
+```
+
+셋을 놓는다 — `.githooks/pre-commit`(+ `core.hooksPath`), 루트 CLAUDE.md 의 계약 문단,
+MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리의 어댑터. 이미 있는 파일은 덮어쓰지 않고,
+이미 있는 CLAUDE.md 에는 어댑터를 맨 앞에 얹는다. 두 번 돌려도 같은 상태다.
+
+어댑터 문구는 `MODULE-schema-v1.md` 에서 읽어 쓴다 — 설치 도구 안에 사본을 두지 않는다.
+"로드되는 자리마다 같은 문장이 와야 한다" 가 약속이 아니라 구조인 자리다.
+
 ## 실행
 
 ```
@@ -32,7 +48,7 @@ npx module-gate --audit          # diff 무관: 인용 줄이 실물을 가리�
 npx module-gate --json           # 같은 판정을 기계 판독 형태로 (stdout 전용)
 npx module-gate --scope <경로>... # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
 npx module-gate --review          # 판정 안 함: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그
-npm test                         # 회귀 테스트 73개, ~60초
+npm test                         # 회귀 테스트 85개, ~75초
 ```
 
 의존은 node 표준 라이브러리와 `git` CLI 뿐이다. 종료 코드로만 말한다 — FAIL 이 하나라도 있으면 1.
@@ -68,6 +84,7 @@ MODULE.md 는 스스로 실리지 않는다. 같은 디렉토리의 CLAUDE.md �
 node loop/loop.mjs scope <경로>...     # 소유 계약을 깊은 것부터 내고 기준선을 잡는다
                                        # → 그 목록을 Read 로 연다 (cat 으로 열면 어댑터가 안 실린다)
 node loop/loop.mjs reconcile           # 재판정. 기준선에 없던 것만 "신규" 로 센다
+node loop/loop.mjs review              # 태그가 정한 리뷰어를 돌린다 ([테스트]→테스트, [grep]→R13)
 node loop/loop.mjs commit -m "<제목>" --contract "<계약 갱신 한 줄>"
 node loop/loop.mjs status | abort
 ```

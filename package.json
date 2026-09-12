@@ -1,15 +1,17 @@
 {
   "name": "module-harness",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MODULE.md 계약 게이트 — 디렉토리별 계약을 커밋 시점에 판정한다",
   "bin": {
-    "module-gate": "module-gate.mjs"
+    "module-gate": "module-gate.mjs",
+    "module-harness-init": "module-harness-init.mjs"
   },
   "scripts": {
-    "test": "node --test module-gate.test.mjs loop/loop.test.mjs"
+    "test": "node --test module-gate.test.mjs module-harness-init.test.mjs loop/loop.test.mjs"
   },
   "files": [
     "module-gate.mjs",
+    "module-harness-init.mjs",
     "MODULE-schema-v1.md",
     "README.md"
   ],
