@@ -254,7 +254,8 @@ test('--trailer 는 계약·게이트 줄과 같은 문단에 붙는다 — git 
   const got = loop(r.dir, ['commit', '-m', '무엇을 했다', '--trailer', 'Co-Authored-By: 누군가 <x@y>']);
   assert.equal(got.code, 0);
   const last = execSync('git log -1 --format=%B', { cwd: r.dir, encoding: 'utf8' }).trim().split('\n\n').pop();
-  assert.match(last, /^게이트: .*\nCo-Authored-By: 누군가 <x@y>$/);
+  // 리뷰 결과가 없으면 `Review: none` 한 줄이고, 사람이 준 트레일러는 그 뒤에 온다
+  assert.match(last, /^게이트: .*\nReview: none\nCo-Authored-By: 누군가 <x@y>$/);
 });
 
 // review 는 세션을 요구하지 않는다 — 리뷰 범위는 세션이 아니라 diff 가 정한다
@@ -397,4 +398,111 @@ test('active 계약이 묶음에 있으면 패킷도 --contract 한 줄을 요�
   // 세션이 문장을 들고 있으므로 다시 만들 때 플래그를 되풀이하지 않아도 된다
   assert.equal(loop(r.dir, ['review', '--packet']).code, 0);
   assert.equal(packet(r.dir).contract_statement, '이력 한 줄을 더했다');
+});
+
+// ---------- 리뷰 결과와 커밋 트레일러 (DESIGN-review.md 4·5절) ----------
+
+const resultPath = (dir) => join(dir, '.git', 'module-loop', 'review-result.json');
+const result = (dir) => JSON.parse(readFileSync(resultPath(dir), 'utf8'));
+const lastMessage = (dir) => execSync('git log -1 --format=%B', { cwd: dir, encoding: 'utf8' });
+
+// 세 페르소나에 답이 다 있는 상태를 만든다. child I3 하나가 [리뷰] 라 불변식 판정자의 대상도 하나다
+function answered(r) {
+  loop(r.dir, ['review', '--packet']);
+  loop(r.dir, ['review', '--answer', 'contract-checker', '아니오',
+    '--reason', '문장은 근거 정정이라 하나 diff 는 I3 문장 자체를 바꿨다', '--evidence', 'child/MODULE.md:12']);
+  loop(r.dir, ['review', '--answer', 'invariant-judge', '참',
+    '--invariant', 'child/I3', '--reason', '금지된 호출이 없다']);
+  loop(r.dir, ['review', '--answer', 'scope-watcher', '예']);
+}
+
+test('"아니오" 와 "거짓" 은 근거 없이는 기록되지 않는다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  loop(r.dir, ['review', '--packet']);
+  const refused = loop(r.dir, ['review', '--answer', 'contract-checker', '아니오', '--reason', '어긋난다']);
+  assert.equal(refused.code, 2);
+  assert.match(refused.out, /--evidence/);
+  assert.equal(existsSync(resultPath(r.dir)), false);
+  const judge = loop(r.dir, ['review', '--answer', 'invariant-judge', '거짓',
+    '--invariant', 'child/I3', '--reason', '깨졌다']);
+  assert.equal(judge.code, 2);
+  assert.match(judge.out, /--evidence/);
+});
+
+test('답의 어휘는 셋으로 닫혀 있다 — 자유 문장은 거부한다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  loop(r.dir, ['review', '--packet']);
+  const free = loop(r.dir, ['review', '--answer', 'contract-checker', '대체로 맞다', '--reason', 'x']);
+  assert.equal(free.code, 2);
+  assert.match(free.out, /자유 문장/);
+  // 불변식 판정자에게 예/아니오 를 주는 것도 어휘 밖이다
+  assert.equal(loop(r.dir, ['review', '--answer', 'invariant-judge', '예', '--invariant', 'child/I3']).code, 2);
+  assert.equal(loop(r.dir, ['review', '--answer', '네번째-페르소나', '예']).code, 2);
+});
+
+test('패킷에 없는 불변식은 판정 대상이 아니다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  loop(r.dir, ['review', '--packet']);
+  const got = loop(r.dir, ['review', '--answer', 'invariant-judge', '참', '--invariant', 'child/I9', '--reason', 'x']);
+  assert.equal(got.code, 2);
+  assert.match(got.out, /패킷에 없는 불변식/);
+  assert.equal(loop(r.dir, ['review', '--answer', 'invariant-judge', '참', '--reason', 'x']).code, 2);
+});
+
+test('패킷이 없으면 답을 받지 않는다 — 답은 패킷에 묶인다', (t) => {
+  const r = reviewRepo(t);
+  const got = loop(r.dir, ['review', '--answer', 'scope-watcher', '예']);
+  assert.equal(got.code, 2);
+  assert.match(got.out, /패킷이 없다/);
+});
+
+test('세 페르소나의 답이 다 있으면 트레일러가 설계한 형식 그대로다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  answered(r);
+  assert.equal(result(r.dir).verdicts.length, 3);
+  assert.equal(result(r.dir).summary, '막음 후보 1 / 통과 2 / 판단불가 0');
+  const hash = JSON.parse(loop(r.dir, ['review', '--packet', '--json']).out.trim().split('\n').pop()).hash;
+  assert.equal(loop(r.dir, ['commit', '-m', '무엇을 했다']).code, 0);
+  const last = lastMessage(r.dir).trim().split('\n\n').pop();
+  assert.match(last, /^Review: 계약대조=아니오 불변식=참\(1\) 범위=예$/m);
+  assert.match(last, new RegExp(`^Review-Result: ${hash.slice(0, 8)}$`, 'm'));
+  // 커밋되는 것은 메시지뿐이다 — 패킷도 결과도 세션과 함께 사라진다
+  assert.equal(existsSync(resultPath(r.dir)), false);
+  assert.equal(existsSync(packetPath(r.dir)), false);
+});
+
+test('packet_hash 가 어긋난 결과는 무시하고 커밋은 그대로 진행한다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  answered(r);
+  const before = result(r.dir).packet_hash;
+  // 계약 문장이 바뀌면 패킷이 달라진다 — 옛 답은 다른 패킷에 대한 것이다
+  const again = loop(r.dir, ['review', '--packet', '--contract', '다른 문장으로 적는다', '--json']);
+  assert.notEqual(JSON.parse(again.out.trim().split('\n').pop()).hash, before);
+  const got = loop(r.dir, ['commit', '-m', '무엇을 했다']);
+  assert.equal(got.code, 0, got.out);
+  assert.match(lastMessage(r.dir), /^Review: none$/m);
+});
+
+test('리뷰 결과가 없어도 커밋은 막히지 않는다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  const got = loop(r.dir, ['commit', '-m', '무엇을 했다']);
+  assert.equal(got.code, 0, got.out);
+  assert.match(lastMessage(r.dir), /^Review: none$/m);
+});
+
+test('같은 페르소나에 다시 답하면 덮어쓴다 — 답은 페르소나마다 하나다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  answered(r);
+  loop(r.dir, ['review', '--answer', 'contract-checker', '예']);
+  const verdicts = result(r.dir).verdicts.filter((v) => v.persona === '계약 대조자');
+  assert.equal(verdicts.length, 1);
+  assert.equal(verdicts[0].answer, '예');
+  assert.equal(result(r.dir).summary, '막음 후보 0 / 통과 3 / 판단불가 0');
 });

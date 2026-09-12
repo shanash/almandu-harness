@@ -1,0 +1,33 @@
+이번 변경의 리뷰 패킷을 만들고, 페르소나 셋에게 각각 답을 받아 기록해줘. 판정하지 말고 기록만 한다 — 리뷰 결과로 커밋이 막히지 않는다.
+
+## 절차 — 반드시 이 순서로
+
+1. `node loop/loop.mjs review --packet` 을 돌린다 (계약 칸이 바뀌었으면 `--contract "<무엇이 왜 바뀌었나>"` 를 함께).
+   거부당하면 멈추고 그대로 보고한다 — 게이트가 FAIL 이면 리뷰는 돌지 않는다. 기계가 이미 거부한 것에 판단을 붙일 이유가 없다
+2. `.git/module-loop/review-packet.json` 을 읽는다
+3. 서브에이전트 **셋을 한 번에** 띄운다. 각각에게 주는 것은 딱 두 가지다:
+   - 자기 페르소나 파일 전문 (`review/personas/contract-checker.md` · `invariant-judge.md` · `scope-watcher.md`)
+   - 패킷 전문 (불변식 판정자에게는 근거 파일을 직접 읽어도 된다고 알린다)
+4. 셋의 답을 `loop review --answer` 로 각각 기록한다:
+   - `node loop/loop.mjs review --answer contract-checker <예|아니오|판단불가> --reason "…" [--evidence 파일:라인]...`
+   - `node loop/loop.mjs review --answer invariant-judge <참|거짓|판단불가> --invariant <module/id> --reason "…" [--evidence 파일:라인]...`
+     — 패킷의 `review_invariants` 항목마다 한 번씩. 항목이 없으면 이 페르소나는 띄우지 않는다
+   - `node loop/loop.mjs review --answer scope-watcher <예|아니오|판단불가> --reason "…" [--evidence 파일]...`
+5. `아니오` · `거짓` 이 나오면 그 reason 과 evidence 를 전문 그대로 사용자에게 보여주고,
+   그것이 사고인지 오탐인지 물어본다. 판단은 사람이 한다
+
+## 하지 말 것
+
+- **이 세션의 대화 맥락을 서브에이전트에 넘기지 않는다.** 변경을 만든 세션이 자기 변경을 리뷰하면 판정이 아니라 변명이 된다.
+  프롬프트에 "우리가 방금 무엇을 했는지" 를 적지 않는다. 페르소나 파일과 패킷만 준다
+- **페르소나끼리 결과를 보여주지 않는다.** 셋은 병렬·독립이다. 합의시키면 관찰 대조가 불가능해진다
+- **답을 대신 고치지 않는다.** 서브에이전트가 낸 answer·reason·evidence 를 그대로 기록한다.
+  답이 어휘를 벗어나 CLI 가 거부하면 그 서브에이전트에게 다시 묻는다
+- **페르소나를 넷으로 늘리지 않는다.** 질문이 셋이라 페르소나가 셋이다
+- **리뷰 결과로 커밋을 막지 않는다.** 막고 싶은 것이 생기면 그것은 게이트 규칙 후보이지 리뷰의 권한이 아니다
+- 코드 품질·스타일·성능을 말하지 않는다. 계약과 diff 의 관계만 본다
+
+## 완료 후
+
+`Review:` 트레일러에 무엇이 남을지 한 줄로 보여준다 (`loop commit --dry-run` 으로 확인할 수 있다).
+`아니오` · `거짓` 이 있으면 그 전문을, 없으면 세 답의 요약만 낸다.

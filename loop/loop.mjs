@@ -5,6 +5,8 @@
 //       node loop/loop.mjs reconcile                          (재판정 + 기준선 차집합)
 //       node loop/loop.mjs review                             (게이트가 정한 배치대로 리뷰어를 돌린다)
 //       node loop/loop.mjs review --packet [--contract "<한 줄>"]  (페르소나에게 줄 입력을 만든다)
+//       node loop/loop.mjs review --answer <페르소나> <답> --reason "<한 줄>" [--evidence <파일:라인>]...
+//                                                          (판단하지 않는다: 호출자가 낸 답을 받아 적는다)
 //       node loop/loop.mjs commit -m "<제목>" [-m <본문>...] [--contract "<한 줄>"] [--dry-run]
 //       node loop/loop.mjs abort
 // 종료 코드: 게이트를 부르는 명령은 게이트의 종료 코드를 그대로 낸다 — 루프는 판정하지 않는다.
@@ -40,8 +42,17 @@ const gitZ = (...args) => run('git', args, { cwd: root }).split('\0').filter(Boo
 // 리포 안에 두면 그 파일이 곧 "승인된 경고 목록" 이 되고, observations/01 이 적은 대로 규칙이
 // 바뀌는 순간 거짓이 된다
 const SESSION = join(git('rev-parse', '--absolute-git-dir'), 'module-loop', 'session.json');
-// 패킷도 같은 자리에 산다 — 재생성 가능하고 커밋되지 않는다 (DESIGN-review.md 2절)
+// 패킷과 그 답도 같은 자리에 산다 — 재생성 가능하고 커밋되지 않는다 (DESIGN-review.md 2·4절)
 const PACKET = join(dirname(SESSION), 'review-packet.json');
+const RESULT = join(dirname(SESSION), 'review-result.json');
+
+// 페르소나는 질문의 이름이다. 셋인 이유는 질문이 셋이기 때문이고, 질문이 늘 때만 는다.
+// 답의 어휘를 여기서 닫는다 — 자유 문장을 받으면 관찰을 기계로 대조할 수 없다 (DESIGN-review.md 3·4절)
+const PERSONAS = [
+  { key: 'contract-checker', name: '계약 대조자', label: '계약대조', pass: '예', deny: '아니오' },
+  { key: 'invariant-judge', name: '불변식 판정자', label: '불변식', pass: '참', deny: '거짓', each: true },
+  { key: 'scope-watcher', name: '범위 감시자', label: '범위', pass: '예', deny: '아니오' },
+].map((p) => ({ ...p, answers: [p.pass, p.deny, '판단불가'] }));
 const GATE_HASH = createHash('sha256').update(readFileSync(GATE)).digest('hex').slice(0, 12);
 const head = () => git('rev-parse', 'HEAD');
 
@@ -176,6 +187,25 @@ const stable = (v) => (Array.isArray(v) ? v.map(stable)
   : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, stable(v[k])]))
     : v);
 const packetHash = (p) => createHash('sha256').update(JSON.stringify(stable(p))).digest('hex');
+const readPacket = () => (existsSync(PACKET) ? JSON.parse(readFileSync(PACKET, 'utf8')) : null);
+
+// 커밋 메시지에 남길 두 줄. 결과가 없거나 지금 패킷과 묶이지 않으면 `Review: none` 이고,
+// 어느 경우에도 커밋을 막지 않는다 — 리뷰는 판정하지 않는다 (DESIGN-review.md 0·5절).
+// 없다는 사실이 메시지에 남아야 나중에 "리뷰를 건너뛴 커밋" 을 셀 수 있다
+function reviewTrailers() {
+  const p = readPacket();
+  if (!p || !existsSync(RESULT)) return ['Review: none'];
+  const hash = packetHash(p);
+  const r = JSON.parse(readFileSync(RESULT, 'utf8'));
+  if (r.packet_hash !== hash) return ['Review: none'];
+  // 여러 답이 한 페르소나에 있으면 나쁜 쪽을 적는다 — 트레일러가 좋은 답만 보이면 grep 이 거짓말한다
+  const worst = (list) => ['거짓', '아니오', '판단불가', '참', '예'].find((a) => list.includes(a)) ?? '없음';
+  const parts = PERSONAS.map((persona) => {
+    const mine = (r.verdicts ?? []).filter((v) => v.persona === persona.name);
+    return `${persona.label}=${worst(mine.map((v) => v.answer))}${persona.each ? `(${mine.length})` : ''}`;
+  });
+  return [`Review: ${parts.join(' ')}`, `Review-Result: ${hash.slice(0, 8)}`];
+}
 
 // ---------- scope ----------
 if (cmd === 'scope') {
@@ -325,6 +355,59 @@ if (cmd === 'review' && has('--packet')) {
   process.exit(0);
 }
 
+// ---------- review --answer ----------
+// 답을 **받아 적는** 자리다. 답을 만들지 않는다 — 만드는 것은 사람(경로 B)이나 페르소나
+// 서브에이전트(경로 A)이고, 여기서는 어휘와 근거의 규율만 건다 (DESIGN-review.md 4·5절).
+if (cmd === 'review' && has('--answer')) {
+  const p = readPacket();
+  if (!p) die('패킷이 없다 — `review --packet` 을 먼저 돌려라. 답은 패킷에 묶인다');
+  const hash = packetHash(p);
+
+  const i = argv.indexOf('--answer');
+  const persona = PERSONAS.find((x) => x.key === argv[i + 1] || x.name === argv[i + 1]);
+  if (!persona) die(`페르소나는 셋이다: ${PERSONAS.map((x) => `${x.key}(${x.name})`).join(', ')}`);
+  const answer = argv[i + 2];
+  if (!persona.answers.includes(answer))
+    die(`${persona.name} 의 답은 ${persona.answers.join(' / ')} 중 하나다 — 자유 문장은 받지 않는다`);
+
+  const reason = value('--reason') ?? '';
+  const evidence = values('--evidence');
+  // 근거 없는 거부는 패킷 오류로 취급한다 (DESIGN-review.md 4절). 통과 답의 빈 근거는 허용한다
+  if (answer === persona.deny && !evidence.length)
+    die(`"${answer}" 에는 --evidence 가 필요하다 — 근거 없는 거부는 기록하지 않는다`);
+  if (answer !== persona.pass && !reason)
+    die(`"${answer}" 에는 --reason 한 문장이 필요하다`);
+
+  let invariant = null;
+  if (persona.each) {
+    invariant = value('--invariant');
+    const known = p.review_invariants.map((it) => `${it.module}/${it.id}`);
+    if (!invariant) die(`${persona.name} 는 --invariant <module/id> 로 어느 문장인지 밝힌다 (패킷에 있는 것: ${known.join(', ') || '없음'})`);
+    if (!known.includes(invariant)) die(`패킷에 없는 불변식이다: ${invariant} — 패킷에 있는 것: ${known.join(', ') || '없음'}`);
+  }
+
+  // 패킷이 바뀌면 앞선 답은 다른 변경에 대한 것이다. 이어 붙이지 않고 버린다
+  const prev = existsSync(RESULT) ? JSON.parse(readFileSync(RESULT, 'utf8')) : null;
+  const verdicts = prev && prev.packet_hash === hash ? prev.verdicts : [];
+  const entry = { persona: persona.name, ...(invariant ? { invariant } : {}), answer, reason, evidence };
+  const at = verdicts.findIndex((v) => v.persona === entry.persona && (v.invariant ?? null) === invariant);
+  if (at >= 0) verdicts[at] = entry; else verdicts.push(entry);
+
+  const count = (...answers) => verdicts.filter((v) => answers.includes(v.answer)).length;
+  const result = {
+    packet_hash: hash,
+    verdicts,
+    summary: `막음 후보 ${count('아니오', '거짓')} / 통과 ${count('예', '참')} / 판단불가 ${count('판단불가')}`,
+  };
+  mkdirSync(dirname(RESULT), { recursive: true });
+  writeFileSync(RESULT, `${JSON.stringify(result, null, 2)}\n`);
+
+  if (has('--json')) { process.stdout.write(`${JSON.stringify({ schema: 1, mode: 'answer', ...result })}\n`); process.exit(0); }
+  console.log(`기록했다: ${persona.name}${invariant ? ` ${invariant}` : ''} = ${answer}`);
+  console.log(`  ${result.summary}  (패킷 ${hash.slice(0, 8)}, 답 ${verdicts.length}개)`);
+  process.exit(0);
+}
+
 // ---------- review ----------
 // 게이트가 리뷰 범위와 태그를 정하고(`--review`), 여기서는 그 배치대로 리뷰어를 돌린다.
 // 계약 문장에 대한 판정은 하지 않는다 — 종료 코드는 테스트 러너와 R13 의 결과를 그대로 낸 것이다.
@@ -420,6 +503,7 @@ if (cmd === 'commit') {
   const trailer = [
     ...(contractLine ? [`계약: ${contractLine}`] : []),
     `게이트: ${data.fail} FAIL ${data.warn} WARN (신규 ${fresh})`,
+    ...reviewTrailers(),
     ...values('--trailer'),
   ].join('\n');
   const message = `${[...paragraphs, trailer].join('\n\n')}\n`;
@@ -432,7 +516,8 @@ if (cmd === 'commit') {
   }
   git('add', '-A');
   run('git', ['commit', '-q', '-F', '-'], { cwd: root, input: message });
-  rmSync(SESSION, { force: true });
+  // 세션과 함께 패킷·결과도 버린다. HEAD 가 움직였으므로 다음 변경의 리뷰는 새 패킷에 묶인다
+  for (const f of [SESSION, PACKET, RESULT]) rmSync(f, { force: true });
   console.log(`커밋했다: ${git('rev-parse', '--short', 'HEAD')}  (파일 ${files.length}개, 세션 종료)`);
   process.exit(0);
 }
