@@ -329,6 +329,36 @@ test('pytest 노드 ID(`파일.py::테스트명`) 인용도 R11 이 추적한다
   assert.ok(has(out, 'WARN', 'alpha', 'R11'), out);
 });
 
+test('확장자 없는 근거 파일도 인용이다 — R11 이 추적한다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    inDeps: ['- [[beta]] — beta 를 쓴다'],
+    invariants: ['- I1. 그 훅이 게이트를 부른다 (근거: beta/hooks/pre-commit:3) [grep]'],
+  });
+  putModule(r.dir, { slug: 'beta', path: 'beta', outDeps: ['- [[alpha]] — alpha 가 쓴다'] });
+  write(r.dir, 'beta/hooks/pre-commit', '#!/bin/sh\nexit 0\n');
+  r.commit();
+  write(r.dir, 'beta/hooks/pre-commit', '#!/bin/sh\necho hi\nexit 0\n');
+  const { out } = gate(r.dir);
+  assert.ok(has(out, 'WARN', 'alpha', 'R11'), out);
+});
+
+test('디렉토리는 근거 파일로 주워지지 않는다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, {
+    slug: 'alpha', path: 'alpha',
+    invariants: ['- I1. beta 의 어딘가에 있다 (근거: beta/sub 아래 전부) [리뷰]'],
+  });
+  putModule(r.dir, { slug: 'beta', path: 'beta' });
+  write(r.dir, 'beta/sub/b.cs', 'class B {}\n');
+  r.commit();
+  const { out } = gate(r.dir);
+  // 디렉토리를 파일로 주우면 R6 이 "beta 소유인데 의존에 없다" 고 울어 버린다
+  assert.ok(!has(out, 'WARN', 'alpha', 'R6'), out);
+  assert.ok(!has(out, 'WARN', 'alpha', 'R12'), out);
+});
+
 test('심볼의 점 표기는 근거 파일로 오인되지 않는다', (t) => {
   // 줄번호를 요구하지 않게 넓히면 `LeAction.MakerDictionaryInit` 같은 멤버 표기가
   // 파일처럼 보인다. 그것까지 주우면 R12 해석 실패 경고가 문장마다 뜬다

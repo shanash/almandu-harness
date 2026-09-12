@@ -172,17 +172,31 @@ const resolveEvidencePath = (m, p) => {
 // 그것까지 파일로 주우면 해석 실패 경고가 문장마다 뜬다.
 const EVIDENCE_RE = /([\w.\-\/]+\.[a-z][a-z0-9]{1,6})(?![\w.\-])(?::(\d+(?:[-,]\d+)*))?/g;
 
+// 확장자 없는 파일도 근거다 (`tools/git-hooks/pre-commit` — 게이트를 부르는 훅 자신이 그 꼴이다).
+// 확장자로 가릴 수 없으니 두 조건으로 좁힌다: 경로 조각이 둘 이상이고, 리포 루트 기준으로
+// 실재하는 **파일**이다. 디렉토리(`restored-project/Assets/Tests/Editor/`)와 메뉴 경로
+// (`KoD/Addressables/Setup Infra`)는 이 필터에서 떨어지고, 해석 실패는 조용하다 —
+// 확장자가 없는 토큰은 애초에 파일 인용이라는 표시가 없으므로 R12 로 고발하지 않는다
+const PATHLIKE_RE = /((?:[\w.\-]+\/)+[\w.\-]+)(?::(\d+(?:[-,]\d+)*))?/g;
+const hasExt = (p) => /\.[a-z][a-z0-9]{1,6}$/.test(p);
+const isRootFile = (p) => {
+  try { return statSync(join(root, p)).isFile(); } catch { return false; }
+};
+
 // 근거 문자열에서 인용 토큰 추출 → [{file, line, spec}] (file 은 리포 상대)
 // spec 은 적힌 그대로의 줄 표기(76, 76-81, 76,81)이고 line 은 그 시작 줄 — 키로 쓴다.
 // 줄번호 없는 인용은 line·spec 이 null 이다.
-const evidenceRefs = (m, evidence) =>
-  [...evidence.matchAll(EVIDENCE_RE)]
-    .map(([, f, spec]) => ({
-      file: resolveEvidencePath(m, f),
-      line: spec ? spec.match(/^\d+/)[0] : null,
-      spec: spec ?? null,
-    }))
-    .filter((r) => r.file);
+const evidenceRefs = (m, evidence) => {
+  const out = new Map();                       // `file:spec` → ref (두 정규식이 같은 토큰을 물면 하나로)
+  const add = (file, spec) => {
+    if (!file) return;
+    const key = `${file}:${spec ?? ''}`;
+    if (!out.has(key)) out.set(key, { file, line: spec ? spec.match(/^\d+/)[0] : null, spec: spec ?? null });
+  };
+  for (const [, f, spec] of evidence.matchAll(EVIDENCE_RE)) add(resolveEvidencePath(m, f), spec);
+  for (const [, f, spec] of evidence.matchAll(PATHLIKE_RE)) if (!hasExt(f) && isRootFile(f)) add(f, spec);
+  return [...out.values()];
+};
 
 // 의존 한 줄이 인용한 것 → Map(file → Set(줄 표기)). 줄번호 없는 인용은 담지 않는다 —
 // 그것은 줄에 대해 아무 주장도 하지 않으므로 반대쪽과 어긋날 수 없다
