@@ -46,13 +46,18 @@ const SESSION = join(git('rev-parse', '--absolute-git-dir'), 'module-loop', 'ses
 const PACKET = join(dirname(SESSION), 'review-packet.json');
 const RESULT = join(dirname(SESSION), 'review-result.json');
 
-// 페르소나는 질문의 이름이다. 셋인 이유는 질문이 셋이기 때문이고, 질문이 늘 때만 는다.
-// 답의 어휘를 여기서 닫는다 — 자유 문장을 받으면 관찰을 기계로 대조할 수 없다 (DESIGN-review.md 3·4절)
-const PERSONAS = [
-  { key: 'contract-checker', name: '계약 대조자', label: '계약대조', pass: '예', deny: '아니오' },
+// 페르소나는 질문의 이름이다. 질문이 늘 때만 늘고, 10회 연속 통과한 질문은 내려서 준다
+// (DESIGN-review.md 6절 역방향). 답의 어휘를 여기서 닫는다 — 자유 문장을 받으면 관찰을 기계로
+// 대조할 수 없다 (DESIGN-review.md 3·4절)
+// `retired` 는 목록에서 지우지 않고 남긴다: 지우면 왜 없는지가 사라지고, 이미 커밋된 트레일러의
+// `계약대조=…` 를 나중에 읽는 쪽이 그 이름을 되찾지 못한다 (6절 "왜 뺐는지 없으면 다시 넣게 된다")
+const ALL_PERSONAS = [
+  { key: 'contract-checker', name: '계약 대조자', label: '계약대조', pass: '예', deny: '아니오',
+    retired: '2026-09-16 kod 0b18de5 — 실전 10회 연속 `예` (DESIGN-review 6절 역방향, 10절 조건 2)' },
   { key: 'invariant-judge', name: '불변식 판정자', label: '불변식', pass: '참', deny: '거짓', each: true },
   { key: 'scope-watcher', name: '범위 감시자', label: '범위', pass: '예', deny: '아니오' },
 ].map((p) => ({ ...p, answers: [p.pass, p.deny, '판단불가'] }));
+const PERSONAS = ALL_PERSONAS.filter((p) => !p.retired);
 const GATE_HASH = createHash('sha256').update(readFileSync(GATE)).digest('hex').slice(0, 12);
 const head = () => git('rev-parse', 'HEAD');
 
@@ -365,7 +370,13 @@ if (cmd === 'review' && has('--answer')) {
 
   const i = argv.indexOf('--answer');
   const persona = PERSONAS.find((x) => x.key === argv[i + 1] || x.name === argv[i + 1]);
-  if (!persona) die(`페르소나는 셋이다: ${PERSONAS.map((x) => `${x.key}(${x.name})`).join(', ')}`);
+  if (!persona) {
+    // 내려진 질문에 답이 오면 "그런 페르소나 없다" 가 아니라 언제 왜 내렸는지로 답한다 —
+    // 낡은 커맨드 사본이 계속 셋을 띄우는 것이 이 오류의 가장 흔한 원인이다
+    const gone = ALL_PERSONAS.find((x) => x.retired && (x.key === argv[i + 1] || x.name === argv[i + 1]));
+    if (gone) die(`${gone.name} 는 리뷰에서 내려졌다 (${gone.retired}) — 이 질문은 더 묻지 않는다`);
+    die(`페르소나는 ${PERSONAS.length}개다: ${PERSONAS.map((x) => `${x.key}(${x.name})`).join(', ')}`);
+  }
   const answer = argv[i + 2];
   if (!persona.answers.includes(answer))
     die(`${persona.name} 의 답은 ${persona.answers.join(' / ')} 중 하나다 — 자유 문장은 받지 않는다`);

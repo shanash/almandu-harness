@@ -406,21 +406,21 @@ const resultPath = (dir) => join(dir, '.git', 'module-loop', 'review-result.json
 const result = (dir) => JSON.parse(readFileSync(resultPath(dir), 'utf8'));
 const lastMessage = (dir) => execSync('git log -1 --format=%B', { cwd: dir, encoding: 'utf8' });
 
-// 세 페르소나에 답이 다 있는 상태를 만든다. child I3 하나가 [리뷰] 라 불변식 판정자의 대상도 하나다
+// 활성 페르소나 전부에 답이 있는 상태를 만든다. child I3 하나가 [리뷰] 라 불변식 판정자의 대상도 하나다.
+// 계약 대조자는 2026-09-16 에 내려져 여기 없다 (DESIGN-review 3절)
 function answered(r) {
   loop(r.dir, ['review', '--packet']);
-  loop(r.dir, ['review', '--answer', 'contract-checker', '아니오',
-    '--reason', '문장은 근거 정정이라 하나 diff 는 I3 문장 자체를 바꿨다', '--evidence', 'child/MODULE.md:12']);
   loop(r.dir, ['review', '--answer', 'invariant-judge', '참',
     '--invariant', 'child/I3', '--reason', '금지된 호출이 없다']);
-  loop(r.dir, ['review', '--answer', 'scope-watcher', '예']);
+  loop(r.dir, ['review', '--answer', 'scope-watcher', '아니오',
+    '--reason', '묶음에 scope 밖 모듈이 있다', '--evidence', 'child/b.mjs']);
 }
 
 test('"아니오" 와 "거짓" 은 근거 없이는 기록되지 않는다', (t) => {
   const r = reviewRepo(t);
   loop(r.dir, ['scope', 'child/b.mjs']);
   loop(r.dir, ['review', '--packet']);
-  const refused = loop(r.dir, ['review', '--answer', 'contract-checker', '아니오', '--reason', '어긋난다']);
+  const refused = loop(r.dir, ['review', '--answer', 'scope-watcher', '아니오', '--reason', '어긋난다']);
   assert.equal(refused.code, 2);
   assert.match(refused.out, /--evidence/);
   assert.equal(existsSync(resultPath(r.dir)), false);
@@ -434,12 +434,17 @@ test('답의 어휘는 셋으로 닫혀 있다 — 자유 문장은 거부한다
   const r = reviewRepo(t);
   loop(r.dir, ['scope', 'child/b.mjs']);
   loop(r.dir, ['review', '--packet']);
-  const free = loop(r.dir, ['review', '--answer', 'contract-checker', '대체로 맞다', '--reason', 'x']);
+  const free = loop(r.dir, ['review', '--answer', 'scope-watcher', '대체로 맞다', '--reason', 'x']);
   assert.equal(free.code, 2);
   assert.match(free.out, /자유 문장/);
   // 불변식 판정자에게 예/아니오 를 주는 것도 어휘 밖이다
   assert.equal(loop(r.dir, ['review', '--answer', 'invariant-judge', '예', '--invariant', 'child/I3']).code, 2);
   assert.equal(loop(r.dir, ['review', '--answer', '네번째-페르소나', '예']).code, 2);
+  // 내려진 질문은 "그런 페르소나 없다" 가 아니라 언제 왜 내렸는지로 거절한다 — 낡은 커맨드 사본이
+  // 계속 띄우는 것이 이 오류의 가장 흔한 원인이라, 이름을 모른다고 답하면 고칠 곳을 못 찾는다
+  const retired = loop(r.dir, ['review', '--answer', 'contract-checker', '예']);
+  assert.equal(retired.code, 2);
+  assert.match(retired.out, /내려졌다/);
 });
 
 test('패킷에 없는 불변식은 판정 대상이 아니다', (t) => {
@@ -459,16 +464,18 @@ test('패킷이 없으면 답을 받지 않는다 — 답은 패킷에 묶인다
   assert.match(got.out, /패킷이 없다/);
 });
 
-test('세 페르소나의 답이 다 있으면 트레일러가 설계한 형식 그대로다', (t) => {
+test('활성 페르소나의 답이 다 있으면 트레일러가 설계한 형식 그대로다', (t) => {
   const r = reviewRepo(t);
   loop(r.dir, ['scope', 'child/b.mjs']);
   answered(r);
-  assert.equal(result(r.dir).verdicts.length, 3);
-  assert.equal(result(r.dir).summary, '막음 후보 1 / 통과 2 / 판단불가 0');
+  assert.equal(result(r.dir).verdicts.length, 2);
+  assert.equal(result(r.dir).summary, '막음 후보 1 / 통과 1 / 판단불가 0');
   const hash = JSON.parse(loop(r.dir, ['review', '--packet', '--json']).out.trim().split('\n').pop()).hash;
   assert.equal(loop(r.dir, ['commit', '-m', '무엇을 했다']).code, 0);
   const last = lastMessage(r.dir).trim().split('\n\n').pop();
-  assert.match(last, /^Review: 계약대조=아니오 불변식=참\(1\) 범위=예$/m);
+  // 계약 대조자가 내려져 항목이 둘이다. 내려진 질문의 자리는 비우고 남기지 않는다 —
+  // `계약대조=없음` 을 남기면 답이 안 온 것인지 질문이 없는 것인지 트레일러가 구분하지 못한다
+  assert.match(last, /^Review: 불변식=참\(1\) 범위=아니오$/m);
   assert.match(last, new RegExp(`^Review-Result: ${hash.slice(0, 8)}$`, 'm'));
   // 커밋되는 것은 메시지뿐이다 — 패킷도 결과도 세션과 함께 사라진다
   assert.equal(existsSync(resultPath(r.dir)), false);
@@ -500,9 +507,9 @@ test('같은 페르소나에 다시 답하면 덮어쓴다 — 답은 페르소�
   const r = reviewRepo(t);
   loop(r.dir, ['scope', 'child/b.mjs']);
   answered(r);
-  loop(r.dir, ['review', '--answer', 'contract-checker', '예']);
-  const verdicts = result(r.dir).verdicts.filter((v) => v.persona === '계약 대조자');
+  loop(r.dir, ['review', '--answer', 'scope-watcher', '예']);
+  const verdicts = result(r.dir).verdicts.filter((v) => v.persona === '범위 감시자');
   assert.equal(verdicts.length, 1);
   assert.equal(verdicts[0].answer, '예');
-  assert.equal(result(r.dir).summary, '막음 후보 0 / 통과 3 / 판단불가 0');
+  assert.equal(result(r.dir).summary, '막음 후보 0 / 통과 2 / 판단불가 0');
 });
