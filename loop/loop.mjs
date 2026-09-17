@@ -55,7 +55,8 @@ const ALL_PERSONAS = [
   { key: 'contract-checker', name: '계약 대조자', label: '계약대조', pass: '예', deny: '아니오',
     retired: '2026-09-16 kod 0b18de5 — 실전 10회 연속 `예` (DESIGN-review 6절 역방향, 10절 조건 2)' },
   { key: 'invariant-judge', name: '불변식 판정자', label: '불변식', pass: '참', deny: '거짓', each: true },
-  { key: 'scope-watcher', name: '범위 감시자', label: '범위', pass: '예', deny: '아니오' },
+  { key: 'scope-watcher', name: '범위 감시자', label: '범위', pass: '예', deny: '아니오',
+    retired: '2026-09-17 kod c319b98 — 실전 14회 연속 `예`, 질문이 이미 commit 의 scope 검사(loop I2)다 (DESIGN-review 3절)' },
 ].map((p) => ({ ...p, answers: [p.pass, p.deny, '판단불가'] }));
 const PERSONAS = ALL_PERSONAS.filter((p) => !p.retired);
 const GATE_HASH = createHash('sha256').update(readFileSync(GATE)).digest('hex').slice(0, 12);
@@ -194,19 +195,23 @@ const stable = (v) => (Array.isArray(v) ? v.map(stable)
 const packetHash = (p) => createHash('sha256').update(JSON.stringify(stable(p))).digest('hex');
 const readPacket = () => (existsSync(PACKET) ? JSON.parse(readFileSync(PACKET, 'utf8')) : null);
 
-// 커밋 메시지에 남길 두 줄. 결과가 없거나 지금 패킷과 묶이지 않으면 `Review: none` 이고,
+// 커밋 메시지에 남길 두 줄. 물을 질문이 있는데 답이 없거나 지금 패킷과 묶이지 않으면 `Review: none` 이고,
 // 어느 경우에도 커밋을 막지 않는다 — 리뷰는 판정하지 않는다 (DESIGN-review.md 0·5절).
 // 없다는 사실이 메시지에 남아야 나중에 "리뷰를 건너뛴 커밋" 을 셀 수 있다
 function reviewTrailers() {
   const p = readPacket();
-  if (!p || !existsSync(RESULT)) return ['Review: none'];
+  if (!p) return ['Review: none'];
   const hash = packetHash(p);
-  const r = JSON.parse(readFileSync(RESULT, 'utf8'));
-  if (r.packet_hash !== hash) return ['Review: none'];
+  const r = existsSync(RESULT) ? JSON.parse(readFileSync(RESULT, 'utf8')) : null;
+  const bound = r?.packet_hash === hash;
+  // 물을 질문이 없는 패킷은 답이 없어도 리뷰를 건너뛴 것이 아니다 — 남은 페르소나가 항목마다 묻는
+  // 불변식 판정자뿐이라, 대상이 0개인 커밋을 `none` 으로 적으면 건너뛴 커밋과 grep 으로 갈리지 않는다
+  const nothingToAsk = PERSONAS.every((x) => x.each && !p.review_invariants.length);
+  if (!bound && !nothingToAsk) return ['Review: none'];
   // 여러 답이 한 페르소나에 있으면 나쁜 쪽을 적는다 — 트레일러가 좋은 답만 보이면 grep 이 거짓말한다
   const worst = (list) => ['거짓', '아니오', '판단불가', '참', '예'].find((a) => list.includes(a)) ?? '없음';
   const parts = PERSONAS.map((persona) => {
-    const mine = (r.verdicts ?? []).filter((v) => v.persona === persona.name);
+    const mine = (bound ? r.verdicts ?? [] : []).filter((v) => v.persona === persona.name);
     return `${persona.label}=${worst(mine.map((v) => v.answer))}${persona.each ? `(${mine.length})` : ''}`;
   });
   return [`Review: ${parts.join(' ')}`, `Review-Result: ${hash.slice(0, 8)}`];
@@ -356,7 +361,9 @@ if (cmd === 'review' && has('--packet')) {
   console.log(`  코드 ${codeFiles.length}개, 계약 ${contractFiles.length}개 — 계약 diff ${packet.contract_diff ? '있음' : '없음 (미결·이력만 바뀌었다)'}`);
   console.log(`  [리뷰] 불변식 ${reviewInvariants.length}개 — 판단이 필요한 자리다`);
   for (const it of reviewInvariants) console.log(`    ${it.module} ${it.id} ${it.text}`);
-  console.log('\n→ 페르소나 셋에 이 패킷을 준다. 답은 이 루프가 만들지 않는다');
+  console.log(reviewInvariants.length
+    ? '\n→ 불변식 판정자에게 이 패킷을 준다. 답은 이 루프가 만들지 않는다'
+    : '\n→ 물을 질문이 없다 — 페르소나를 띄우지 않고 커밋해도 트레일러가 그 사실을 남긴다');
   process.exit(0);
 }
 
@@ -372,7 +379,7 @@ if (cmd === 'review' && has('--answer')) {
   const persona = PERSONAS.find((x) => x.key === argv[i + 1] || x.name === argv[i + 1]);
   if (!persona) {
     // 내려진 질문에 답이 오면 "그런 페르소나 없다" 가 아니라 언제 왜 내렸는지로 답한다 —
-    // 낡은 커맨드 사본이 계속 셋을 띄우는 것이 이 오류의 가장 흔한 원인이다
+    // 낡은 커맨드 사본이 내려진 페르소나를 계속 띄우는 것이 이 오류의 가장 흔한 원인이다
     const gone = ALL_PERSONAS.find((x) => x.retired && (x.key === argv[i + 1] || x.name === argv[i + 1]));
     if (gone) die(`${gone.name} 는 리뷰에서 내려졌다 (${gone.retired}) — 이 질문은 더 묻지 않는다`);
     die(`페르소나는 ${PERSONAS.length}개다: ${PERSONAS.map((x) => `${x.key}(${x.name})`).join(', ')}`);
