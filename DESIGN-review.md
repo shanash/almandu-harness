@@ -45,7 +45,8 @@ scope → change → reconcile → review → commit
   "diff": {
     "code":     ["restored-project/Assets/Scripts/Engine/Types/LeValue.cs"],
     "contract": ["restored-project/Assets/Scripts/Engine/MODULE.md"],
-    "owners":   { "…LeValue.cs": "engine" }
+    "owners":   { "…LeValue.cs": "engine" },
+    "content":  "<묶음 파일 본문의 sha256>"
   },
   "contract_statement": "I11 신설 — 값 변환 구현은 StringWith 한 곳",
   "contract_diff": "<MODULE.md 의 unified diff, 계약 섹션만>",
@@ -60,6 +61,9 @@ scope → change → reconcile → review → commit
   `touched: false` 인 것은 넣지 않는다 — 읽지 않은 코드에 판단을 붙이면 추측이 된다
 - `contract_diff` 는 계약 섹션(책임·진입점·의존·불변식)만. 미결·이력은 뺀다 — R2 와 같은 경계
 - 패킷은 재생성 가능하고 커밋되지 않는다. 클론과 함께 죽는다
+- `diff.content` 는 묶음 파일 전부의 본문(지운 파일·심볼릭 링크·실행 비트 포함) 해시다 (2026-09-17, 0.5.0).
+  경로 목록만 담으면 같은 파일 안에서 코드를 통째로 바꿔도 해시가 그대로라, 리뷰 뒤에 고친 코드에 앞선 답이
+  묶였다 (`observations/05-review-field.md` 결함 메모 6). 페르소나는 이 필드를 읽지 않는다 — 봉인용이다
 
 ---
 
@@ -156,7 +160,11 @@ scope → change → reconcile → review → commit
 - `reason` 은 한 문장. `evidence` 는 파일:라인. 없으면 빈 배열 — **빈 배열은 허용되지만 `판단불가`와 함께여야 한다**.
   "아니오"에 근거가 없으면 패킷 오류로 취급한다
 - `answer` 는 셋 중 하나. 자유 문장 금지 — 관찰 대조를 기계로 하기 위해서
-- `packet_hash` 가 현재 패킷과 다르면 result 는 무효. 봉인 규칙과 같다
+- `packet_hash` 가 현재 패킷과 다르면 result 는 무효. 봉인 규칙과 같다.
+  "현재 패킷" 은 파일로 쓴 패킷이 아니라 **커밋 시점의 묶음으로 다시 만든 패킷**이다 (0.5.0) — 리뷰를 받은 뒤
+  잔재를 빼거나 코드를 고치면 파일로 쓴 패킷은 그대로 남아 낡은 답을 가리킨다
+- `superseded` — 패킷이 바뀌어 버린 답과 같은 패킷에서 덮어쓴 답 중 **통과가 아닌 것**만 `packet_hash` 와 함께
+  옮겨 둔다 (0.5.0). "거짓 → 수정 → 참" 의 앞쪽이 6절 승격 경로의 원료라 버리지 않는다. 통과 답은 옮기지 않는다
 
 ---
 
@@ -180,6 +188,22 @@ Review-Result: <packet_hash 앞 8자리>
 
 result 가 없으면 `Review: none`. **없어도 커밋된다.** 다만 trailer 가 없다는 사실이 기록에 남아,
 나중에 "리뷰를 건너뛴 커밋"을 grep 으로 셀 수 있다.
+
+**추가 (2026-09-17, 0.5.0)** — 두 결함 메모(05 의 6·1)를 이 절에서 닫는다.
+
+- `commit` 은 파일로 쓴 패킷을 믿지 않고 지금 묶음으로 패킷을 다시 만들어 해시를 대조한다. 다르면 답을 싣지
+  않고 `Review: none` 으로 남기며, 빠진·들어온 파일이나 내용 변화를 stderr 로 알린다. 거부하지 않는다 — 0절의
+  비차단 원칙 그대로이고, 트레일러가 커밋되는 트리를 가리키지 않는 것보다 `none` 이 정직하다
+- 통과가 아닌 답은 이유와 근거까지 커밋에 남는다. 답 하나에 한 줄이다:
+
+  ```
+  Review-Verdict: <packet_hash 앞 8자리> 불변식 engine/I3=거짓 | <reason> | <evidence …>
+  ```
+
+  `superseded` 와 지금 result 의 답을 모두 싣는다. 결과가 이 커밋의 패킷에 묶이지 않아 `Review: none` 이어도
+  싣는다 — 줄마다 패킷 해시가 있어 어느 트리에 대한 답인지 갈린다. 자리를 커밋 메시지로 정한 이유는 소비
+  리포의 루프가 하네스의 `observations/` 에 쓸 수 없고, 작업 트리에 쓰면 loop I5 가 깨지고, `.git/` 안에 두면
+  클론되지 않기 때문이다. 커밋과 함께 클론되는 자리는 메시지뿐이다
 
 ---
 
@@ -320,7 +344,7 @@ v0.4.0 태그 후 `github:shanash/module-harness#v0.4.0` 으로 갱신. 12장 �
 
 ## 13. 미결
 
-- 결정: 비통과 verdict 를 커밋 후에도 보존한다 (예정 — 5e 가 닫혔으므로 다음 루프 수정 세션). `loop commit` 이 trailer 에 answer 만 남기고 reason·evidence 를 `.git/module-loop/` 와 함께 버리므로 6절 승격 경로의 원료가 사라진다 (근거: `observations/05-review-field.md` 의 결함 메모 1)
+- ~~결정: 비통과 verdict 를 커밋 후에도 보존한다~~ — 2026-09-17 0.5.0 에서 이행. `Review-Verdict:` 트레일러로 남긴다 (5절 추가, loop I11)
 - ~~결정: 계약 대조자의 "판단불가" 비율이 높을 때 `contract_statement` 형식을 구조화할지~~ — 2026-09-16 종결. 실전 10회에서 `판단불가` 가 0건이었고 질문 자체를 내렸다 (3절 내림 기록). 다시 올릴 일이 생기면 이 줄도 함께 되살린다
 - `review_invariants` 의 `touched` 를 파일 단위로 볼지 라인 범위까지 볼지 미정. 파일 단위로 시작
 - 서브에이전트가 근거 파일을 읽는 범위를 패킷이 제한할지, 자유롭게 읽게 둘지 미정. 자유로 시작하고 04 에서 판단

@@ -12,7 +12,7 @@
 // 종료 코드: 게이트를 부르는 명령은 게이트의 종료 코드를 그대로 낸다 — 루프는 판정하지 않는다.
 //           루프 자신의 거부(세션 없음, scope 밖 경로 등)는 2 다.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, lstatSync, readlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -194,27 +194,105 @@ const stable = (v) => (Array.isArray(v) ? v.map(stable)
     : v);
 const packetHash = (p) => createHash('sha256').update(JSON.stringify(stable(p))).digest('hex');
 const readPacket = () => (existsSync(PACKET) ? JSON.parse(readFileSync(PACKET, 'utf8')) : null);
+const readResult = () => (existsSync(RESULT) ? JSON.parse(readFileSync(RESULT, 'utf8')) : null);
 
-// 커밋 메시지에 남길 두 줄. 물을 질문이 있는데 답이 없거나 지금 패킷과 묶이지 않으면 `Review: none` 이고,
+// 묶음의 본문 해시. 경로 목록·계약 diff 만 담으면 같은 파일 안에서 코드를 통째로 바꿔도 해시가
+// 그대로라, 리뷰 뒤에 고친 코드에 앞선 답이 붙는다 (observations/05 결함 메모 6).
+// 종류 표시를 길이 앞에 두는 이유: 내용이 "없음" 인 파일과 지운 파일이 같은 바이트를 내지 않게 한다
+function contentHash(files) {
+  const h = createHash('sha256');
+  for (const f of files) {
+    const p = join(root, f);
+    let st = null;
+    try { st = lstatSync(p); } catch { /* 지운 파일 */ }
+    const [kind, body] = !st ? ['D', '']
+      : st.isSymbolicLink() ? ['L', readlinkSync(p)]
+        : st.isFile() ? [st.mode & 0o111 ? 'X' : 'F', readFileSync(p)]
+          : ['O', ''];
+    h.update(`${f}\0${kind}\0${Buffer.byteLength(body)}\0`);
+    h.update(body);
+  }
+  return h.digest('hex');
+}
+
+// 패킷은 두 자리에서 만든다 — `review --packet` 이 파일로 쓰고, `commit` 이 지금 묶음으로 다시 만들어
+// 답이 묶인 패킷과 대조한다. 두 자리가 다른 함수를 쓰면 같은 트리가 다른 해시를 낸다 (I7)
+function buildPacket(s, files, statement) {
+  const contractFiles = files.filter(isContract);
+  const codeFiles = files.filter((f) => !isContract(f));
+  const codeSet = new Set(codeFiles);
+  const { data: owned } = gateJson('--scope', ...files);
+  const { data: scoped } = gateJson('--review');
+  // 읽지 않은 코드에 판단을 붙이면 추측이 된다 — 근거 파일을 이번 diff 가 건드린 것만 싣는다
+  const reviewInvariants = scoped.invariants
+    .filter((it) => it.tag === '리뷰' && it.evidence.some((e) => codeSet.has(e.split(':')[0])))
+    .map((it) => ({ module: it.module, id: it.id, text: it.text, evidence: it.evidence, touched: true }));
+  return {
+    session: { head: s.head, gate_hash: s.gate },
+    scope: [...new Set(s.contracts.map(slugOf))],
+    diff: {
+      code: codeFiles,
+      contract: contractFiles,
+      owners: Object.fromEntries(owned.paths.map((p) => [p.path, p.owner])),
+      content: contentHash(files),
+    },
+    contract_statement: statement,
+    contract_diff: contractDiff(contractFiles),
+    review_invariants: reviewInvariants,
+  };
+}
+
+// 비통과 답(`거짓`·`판단불가` 등)의 이유와 근거를 커밋에 싣는다. `.git/module-loop/` 는 커밋과 함께
+// 지워지므로 여기 싣지 않으면 승격 경로(DESIGN-review 6절)의 유일한 원료가 사라진다 (observations/05
+// 결함 메모 1). 지금 묶음과 다른 패킷에 대한 답도 싣는다 — 줄마다 패킷 해시가 있어 어느 트리에 대한 답인지 갈린다
+function verdictTrailers(r) {
+  if (!r) return [];
+  const line = (x) => String(x).replace(/\s+/g, ' ').trim();
+  return [...(r.superseded ?? []), ...(r.verdicts ?? []).map((v) => ({ packet_hash: r.packet_hash, ...v }))]
+    .flatMap((v) => {
+      const persona = ALL_PERSONAS.find((x) => x.name === v.persona);
+      if (persona && v.answer === persona.pass) return [];
+      return [`Review-Verdict: ${v.packet_hash.slice(0, 8)} ${persona?.label ?? v.persona}${v.invariant ? ` ${v.invariant}` : ''}=${v.answer}`
+        + ` | ${line(v.reason) || '-'} | ${(v.evidence ?? []).map(line).join(' ') || '-'}`];
+    });
+}
+
+// 커밋 메시지에 남길 리뷰 줄. 물을 질문이 있는데 답이 없거나 지금 묶음의 패킷과 묶이지 않으면 `Review: none` 이고,
 // 어느 경우에도 커밋을 막지 않는다 — 리뷰는 판정하지 않는다 (DESIGN-review.md 0·5절).
 // 없다는 사실이 메시지에 남아야 나중에 "리뷰를 건너뛴 커밋" 을 셀 수 있다
-function reviewTrailers() {
-  const p = readPacket();
-  if (!p) return ['Review: none'];
-  const hash = packetHash(p);
-  const r = existsSync(RESULT) ? JSON.parse(readFileSync(RESULT, 'utf8')) : null;
+function reviewTrailers(s, files) {
+  const stored = readPacket();
+  const r = readResult();
+  const verdicts = verdictTrailers(r);
+  if (!stored) return ['Review: none', ...verdicts];
+  // 리뷰한 뒤 묶음에서 파일을 빼거나 더하거나 고치면 그 답은 커밋되는 트리에 대한 것이 아니다.
+  // 파일로 쓴 패킷을 믿지 않고 지금 묶음으로 다시 만들어 대조한다 (observations/05 결함 메모 6)
+  const current = buildPacket(s, files, s.contract_statement ?? '');
+  const hash = packetHash(current);
+  if (packetHash(stored) !== hash) {
+    const before = new Set([...(stored.diff?.code ?? []), ...(stored.diff?.contract ?? [])]);
+    const added = files.filter((f) => !before.has(f));
+    const removed = [...before].filter((f) => !files.includes(f));
+    console.error(`loop: 리뷰한 패킷(${packetHash(stored).slice(0, 8)})이 지금 묶음의 패킷(${hash.slice(0, 8)})과 다르다 — 답을 싣지 않고 \`Review: none\` 으로 남긴다`);
+    for (const f of removed) console.error(`  - ${f}  (리뷰 뒤에 묶음에서 빠졌다)`);
+    for (const f of added) console.error(`  + ${f}  (리뷰 뒤에 묶음에 들어왔다)`);
+    if (!added.length && !removed.length)
+      console.error(stored.diff?.content !== current.diff.content ? '  같은 파일 목록에서 내용이 바뀌었다' : '  계약 문장·계약 diff·불변식 목록 중 하나가 바뀌었다');
+    console.error('  → `review --packet` 을 다시 돌리고 다시 묻는다');
+    return ['Review: none', ...verdicts];
+  }
   const bound = r?.packet_hash === hash;
   // 물을 질문이 없는 패킷은 답이 없어도 리뷰를 건너뛴 것이 아니다 — 남은 페르소나가 항목마다 묻는
   // 불변식 판정자뿐이라, 대상이 0개인 커밋을 `none` 으로 적으면 건너뛴 커밋과 grep 으로 갈리지 않는다
-  const nothingToAsk = PERSONAS.every((x) => x.each && !p.review_invariants.length);
-  if (!bound && !nothingToAsk) return ['Review: none'];
+  const nothingToAsk = PERSONAS.every((x) => x.each && !current.review_invariants.length);
+  if (!bound && !nothingToAsk) return ['Review: none', ...verdicts];
   // 여러 답이 한 페르소나에 있으면 나쁜 쪽을 적는다 — 트레일러가 좋은 답만 보이면 grep 이 거짓말한다
   const worst = (list) => ['거짓', '아니오', '판단불가', '참', '예'].find((a) => list.includes(a)) ?? '없음';
   const parts = PERSONAS.map((persona) => {
     const mine = (bound ? r.verdicts ?? [] : []).filter((v) => v.persona === persona.name);
     return `${persona.label}=${worst(mine.map((v) => v.answer))}${persona.each ? `(${mine.length})` : ''}`;
   });
-  return [`Review: ${parts.join(' ')}`, `Review-Result: ${hash.slice(0, 8)}`];
+  return [`Review: ${parts.join(' ')}`, `Review-Result: ${hash.slice(0, 8)}`, ...verdicts];
 }
 
 // ---------- scope ----------
@@ -222,6 +300,14 @@ if (cmd === 'scope') {
   const paths = [];
   for (let i = 1; i < argv.length && !argv[i].startsWith('--'); i++) paths.push(argv[i]);
   if (!paths.length) die('경로가 없다: node loop/loop.mjs scope <경로>...');
+  // 게이트의 `--scope` 는 없는 경로에도 디렉토리 접두사로 답하므로, 공백으로 뭉친 인자 하나가 읽어야 할
+  // 계약 목록을 조용히 줄인다 (observations/05 결함 메모 7). 새 파일은 부모 디렉토리가 있어야 받는다
+  const inHead = (p) => spawnSync('git', ['cat-file', '-e', `HEAD:${p}`], { cwd: root, stdio: 'ignore' }).status === 0;
+  const missing = paths.filter((p) => !existsSync(join(root, p)) && !inHead(p) && !existsSync(join(root, dirname(p))));
+  if (missing.length) {
+    die(`작업 트리에도 HEAD 에도 없고 부모 디렉토리도 없는 경로다 — 세션을 열지 않는다. 인자 여럿이 하나로 뭉치지 않았는지 본다:\n${
+      missing.map((p) => `  ${JSON.stringify(p)}`).join('\n')}`);
+  }
 
   const { data: scoped } = gateJson('--scope', ...paths);
   const prev = readSession();
@@ -314,14 +400,10 @@ if (cmd === 'review' && has('--packet')) {
 
   const files = bundle();
   if (!files.length) die('묶음이 비었다 — 리뷰할 변경이 없다');
-  const contractFiles = files.filter(isContract);
-  const codeFiles = files.filter((f) => !isContract(f));
-  const codeSet = new Set(codeFiles);
-
   // 계약 대조자는 이 문장과 계약 diff 를 맞춰 본다. 문장이 없으면 그 질문이 성립하지 않으므로
   // I6 이 커밋에서 요구하는 것과 같은 자리에서 같은 줄을 요구한다
   const statement = value('--contract') ?? s.contract_statement ?? '';
-  const activeContracts = contractFiles.filter(isActive);
+  const activeContracts = files.filter((f) => isContract(f) && isActive(f));
   if (activeContracts.length && !statement)
     die(`active 계약이 묶음에 있다 (${activeContracts.join(', ')}) — \`--contract "<무엇이 왜 바뀌었나>"\` 를 적어라`);
   if (statement !== (s.contract_statement ?? '')) {
@@ -329,25 +411,9 @@ if (cmd === 'review' && has('--packet')) {
     writeFileSync(SESSION, `${JSON.stringify(s, null, 2)}\n`);
   }
 
-  const { data: owned } = gateJson('--scope', ...files);
-  const { data: scoped } = gateJson('--review');
-  // 읽지 않은 코드에 판단을 붙이면 추측이 된다 — 근거 파일을 이번 diff 가 건드린 것만 싣는다
-  const reviewInvariants = scoped.invariants
-    .filter((it) => it.tag === '리뷰' && it.evidence.some((e) => codeSet.has(e.split(':')[0])))
-    .map((it) => ({ module: it.module, id: it.id, text: it.text, evidence: it.evidence, touched: true }));
-
-  const packet = {
-    session: { head: s.head, gate_hash: s.gate },
-    scope: [...new Set(s.contracts.map(slugOf))],
-    diff: {
-      code: codeFiles,
-      contract: contractFiles,
-      owners: Object.fromEntries(owned.paths.map((p) => [p.path, p.owner])),
-    },
-    contract_statement: statement,
-    contract_diff: contractDiff(contractFiles),
-    review_invariants: reviewInvariants,
-  };
+  const packet = buildPacket(s, files, statement);
+  const { code: codeFiles, contract: contractFiles } = packet.diff;
+  const reviewInvariants = packet.review_invariants;
   const hash = packetHash(packet);
   mkdirSync(dirname(PACKET), { recursive: true });
   writeFileSync(PACKET, `${JSON.stringify(packet, null, 2)}\n`);
@@ -404,17 +470,25 @@ if (cmd === 'review' && has('--answer')) {
     if (!known.includes(invariant)) die(`패킷에 없는 불변식이다: ${invariant} — 패킷에 있는 것: ${known.join(', ') || '없음'}`);
   }
 
-  // 패킷이 바뀌면 앞선 답은 다른 변경에 대한 것이다. 이어 붙이지 않고 버린다
-  const prev = existsSync(RESULT) ? JSON.parse(readFileSync(RESULT, 'utf8')) : null;
-  const verdicts = prev && prev.packet_hash === hash ? prev.verdicts : [];
+  // 패킷이 바뀌면 앞선 답은 다른 변경에 대한 것이다. 이어 붙이지 않고 버린다 — 다만 비통과 답은
+  // `superseded` 로 옮겨 커밋까지 들고 간다. "거짓 → 수정 → 참" 에서 앞의 거짓이 승격 경로의 원료다 (결함 메모 1)
+  const prev = readResult();
+  const same = prev?.packet_hash === hash;
+  const nonPass = (v) => v.answer !== ALL_PERSONAS.find((x) => x.name === v.persona)?.pass;
+  const superseded = [...(prev?.superseded ?? []),
+    ...(prev && !same ? prev.verdicts.filter(nonPass).map((v) => ({ packet_hash: prev.packet_hash, ...v })) : [])];
+  const verdicts = same ? prev.verdicts : [];
   const entry = { persona: persona.name, ...(invariant ? { invariant } : {}), answer, reason, evidence };
   const at = verdicts.findIndex((v) => v.persona === entry.persona && (v.invariant ?? null) === invariant);
+  if (at >= 0 && nonPass(verdicts[at]) && JSON.stringify(verdicts[at]) !== JSON.stringify(entry))
+    superseded.push({ packet_hash: hash, ...verdicts[at] });
   if (at >= 0) verdicts[at] = entry; else verdicts.push(entry);
 
   const count = (...answers) => verdicts.filter((v) => answers.includes(v.answer)).length;
   const result = {
     packet_hash: hash,
     verdicts,
+    ...(superseded.length ? { superseded } : {}),
     summary: `막음 후보 ${count('아니오', '거짓')} / 통과 ${count('예', '참')} / 판단불가 ${count('판단불가')}`,
   };
   mkdirSync(dirname(RESULT), { recursive: true });
@@ -521,7 +595,7 @@ if (cmd === 'commit') {
   const trailer = [
     ...(contractLine ? [`계약: ${contractLine}`] : []),
     `게이트: ${data.fail} FAIL ${data.warn} WARN (신규 ${fresh})`,
-    ...reviewTrailers(),
+    ...reviewTrailers(s, files),
     ...values('--trailer'),
   ].join('\n');
   const message = `${[...paragraphs, trailer].join('\n\n')}\n`;

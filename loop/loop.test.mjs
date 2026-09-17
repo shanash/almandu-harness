@@ -94,6 +94,27 @@ test('scope 는 소유 계약을 깊은 것부터 내고 세션을 .git 안에 �
   assert.match(got.out, /child\/MODULE\.md/);
 });
 
+test('scope 는 트리에도 HEAD 에도 없는 경로를 거부하고 세션을 열지 않는다', (t) => {
+  const r = newRepo(t);
+  // 셸이 단어로 쪼개지 않아 경로 둘이 인자 하나로 뭉친 모양 (observations/05 결함 메모 7)
+  const joined = loop(r.dir, ['scope', 'child/b.mjs other/c.mjs']);
+  assert.equal(joined.code, 2);
+  assert.match(joined.out, /부모 디렉토리도 없는 경로/);
+  assert.match(joined.out, /"child\/b\.mjs other\/c\.mjs"/);
+  assert.equal(existsSync(sessionPath(r.dir)), false);
+  // 하나라도 없으면 나머지도 받지 않는다 — 반만 열린 세션은 목록을 조용히 줄인 것과 같다
+  assert.equal(loop(r.dir, ['scope', 'child/b.mjs', 'nowhere/x.mjs']).code, 2);
+  assert.equal(existsSync(sessionPath(r.dir)), false);
+});
+
+test('scope 는 새 파일(부모 디렉토리가 있다)과 작업 트리에서 지운 파일을 받는다', (t) => {
+  const r = newRepo(t);
+  rmSync(join(r.dir, 'other/c.mjs'));
+  const got = loop(r.dir, ['scope', 'child/new.mjs', 'other/c.mjs']);
+  assert.equal(got.code, 0, got.out);
+  assert.deepEqual(session(r.dir).paths, ['child/new.mjs', 'other/c.mjs']);
+});
+
 test('루프는 리포에 파일을 쓰지 않는다 — 세션은 .git 안에서만 산다', (t) => {
   const r = newRepo(t);
   loop(r.dir, ['scope', 'child/b.mjs']);
@@ -475,6 +496,8 @@ test('활성 페르소나의 답이 다 있으면 트레일러가 설계한 형�
   // `계약대조=없음` 을 남기면 답이 안 온 것인지 질문이 없는 것인지 트레일러가 구분하지 못한다
   assert.match(last, /^Review: 불변식=거짓\(1\)$/m);
   assert.match(last, new RegExp(`^Review-Result: ${hash.slice(0, 8)}$`, 'm'));
+  // 비통과 답은 이유와 근거까지 커밋에 남는다 — 결과 파일은 곧 지워진다
+  assert.match(last, new RegExp(`^Review-Verdict: ${hash.slice(0, 8)} 불변식 child/I3=거짓 \\| 금지된 호출이 생겼다 \\| child/b\\.mjs:1$`, 'm'));
   // 커밋되는 것은 메시지뿐이다 — 패킷도 결과도 세션과 함께 사라진다
   assert.equal(existsSync(resultPath(r.dir)), false);
   assert.equal(existsSync(packetPath(r.dir)), false);
@@ -491,6 +514,79 @@ test('packet_hash 가 어긋난 결과는 무시하고 커밋은 그대로 진�
   const got = loop(r.dir, ['commit', '-m', '무엇을 했다']);
   assert.equal(got.code, 0, got.out);
   assert.match(lastMessage(r.dir), /^Review: none$/m);
+  // 묶이지 않은 답이라도 비통과는 어느 패킷에 대한 것인지와 함께 남는다
+  assert.match(lastMessage(r.dir), new RegExp(`^Review-Verdict: ${before.slice(0, 8)} 불변식 child/I3=거짓 `, 'm'));
+});
+
+test('리뷰 뒤에 같은 파일의 내용을 고치면 패킷 해시가 달라지고 답을 싣지 않는다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  loop(r.dir, ['review', '--packet']);
+  loop(r.dir, ['review', '--answer', 'invariant-judge', '참', '--invariant', 'child/I3']);
+  const reviewed = result(r.dir).packet_hash;
+  // 파일 목록은 그대로다 — 목록만 담던 해시는 이 변화를 못 봤다 (observations/05 결함 메모 6)
+  r.write('child/b.mjs', 'export const b = 7;\nexport const c = 2;\nconst d = 3;\n');
+  const dry = loop(r.dir, ['commit', '-m', '무엇을 했다', '--dry-run']);
+  assert.match(dry.out, /같은 파일 목록에서 내용이 바뀌었다/);
+  assert.match(dry.out, /^Review: none$/m);
+  const again =JSON.parse(loop(r.dir, ['review', '--packet', '--json']).out.trim().split('\n').pop());
+  assert.notEqual(again.hash, reviewed);
+  const got = loop(r.dir, ['commit', '-m', '무엇을 했다']);
+  assert.equal(got.code, 0, got.out);
+  assert.match(lastMessage(r.dir), /^Review: none$/m);
+});
+
+test('리뷰 뒤에 묶음에서 파일을 빼면 커밋은 진행하되 답을 싣지 않고 무엇이 빠졌는지 알린다', (t) => {
+  const r = reviewRepo(t);
+  r.write('other/c.mjs', 'export const c = 2;\n');   // 작업 전부터 있던 잔재 역할
+  loop(r.dir, ['scope', 'child/b.mjs', 'other/c.mjs']);
+  loop(r.dir, ['review', '--packet']);
+  loop(r.dir, ['review', '--answer', 'invariant-judge', '참', '--invariant', 'child/I3']);
+  const reviewed = result(r.dir).packet_hash;
+  r.git('checkout -- other/c.mjs');                    // 답을 받은 뒤 잔재를 뺀다
+  const dry = loop(r.dir, ['commit', '-m', '무엇을 했다', '--dry-run']);
+  assert.equal(dry.code, 0, dry.out);
+  assert.match(dry.out, /리뷰한 패킷\(.{8}\)이 지금 묶음의 패킷\(.{8}\)과 다르다/);
+  assert.match(dry.out, /- other\/c\.mjs {2}\(리뷰 뒤에 묶음에서 빠졌다\)/);
+  assert.match(dry.out, /^Review: none$/m);
+  assert.doesNotMatch(dry.out, new RegExp(`Review-Result: ${reviewed.slice(0, 8)}`));
+  // 패킷을 다시 만들고 다시 물으면 트레일러가 커밋되는 묶음을 가리킨다
+  loop(r.dir, ['review', '--packet']);
+  loop(r.dir, ['review', '--answer', 'invariant-judge', '참', '--invariant', 'child/I3']);
+  assert.equal(loop(r.dir, ['commit', '-m', '무엇을 했다']).code, 0);
+  assert.match(lastMessage(r.dir), /^Review: 불변식=참\(1\)$/m);
+});
+
+test('패킷이 바뀌어 버려진 비통과 답도 커밋에 남는다 — 거짓 → 수정 → 참 의 앞쪽이 승격 경로의 원료다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  answered(r);
+  const first = result(r.dir).packet_hash;
+  r.write('child/b.mjs', 'export const b = 8;\nexport const c = 2;\nconst d = 3;\n');   // 고친다
+  const second = JSON.parse(loop(r.dir, ['review', '--packet', '--json']).out.trim().split('\n').pop()).hash;
+  loop(r.dir, ['review', '--answer', 'invariant-judge', '참', '--invariant', 'child/I3']);
+  assert.equal(result(r.dir).verdicts.length, 1);
+  assert.equal(result(r.dir).superseded.length, 1);
+  assert.equal(loop(r.dir, ['commit', '-m', '무엇을 했다']).code, 0);
+  const msg = lastMessage(r.dir);
+  assert.match(msg, /^Review: 불변식=참\(1\)$/m);
+  assert.match(msg, new RegExp(`^Review-Result: ${second.slice(0, 8)}$`, 'm'));
+  assert.match(msg, new RegExp(`^Review-Verdict: ${first.slice(0, 8)} 불변식 child/I3=거짓 \\| 금지된 호출이 생겼다 \\| child/b\\.mjs:1$`, 'm'));
+  // 통과 답은 Review 한 줄로 충분하다 — 줄마다 싣지 않는다
+  assert.equal(msg.match(/^Review-Verdict:/gm).length, 1);
+});
+
+test('같은 패킷에서 비통과 답을 덮어써도 앞의 답은 남는다', (t) => {
+  const r = reviewRepo(t);
+  loop(r.dir, ['scope', 'child/b.mjs']);
+  answered(r);
+  loop(r.dir, ['review', '--answer', 'invariant-judge', '판단불가', '--invariant', 'child/I3', '--reason', '근거 파일을 못 읽었다']);
+  assert.equal(result(r.dir).superseded.length, 1);
+  assert.equal(loop(r.dir, ['commit', '-m', '무엇을 했다']).code, 0);
+  const lines = lastMessage(r.dir).match(/^Review-Verdict: .*$/gm);
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /=거짓 \| 금지된 호출이 생겼다 \| child\/b\.mjs:1$/);
+  assert.match(lines[1], /=판단불가 \| 근거 파일을 못 읽었다 \| -$/);
 });
 
 test('물을 불변식이 없는 패킷은 답이 없어도 none 이 아니다 — 건너뛴 커밋과 갈린다', (t) => {
