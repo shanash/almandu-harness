@@ -292,9 +292,9 @@ npm i -D github:shanash/almandu-harness#v0.7.0
 `.github/workflows/ci.yml` 이 이 셋을 돌린다 (2026-09-12):
 
 ```
-npm test                                      # 85개, ~75초
-npx --no-install almandu-module-gate --base origin/main    # PR 이 계약을 어기는지
-npx --no-install almandu-module-gate --audit               # 전수 — nightly(03:00 KST)와 수동 실행만
+npm test                                      # 108개
+node module-gate.mjs --base origin/<base>     # PR 이 계약을 어기는지 (push 는 --base HEAD~1)
+node module-gate.mjs --audit                  # 전수 — nightly(03:00 KST)와 수동 실행만
 ```
 
 `--audit` 를 매 PR 에 걸지 않는 이유는 diff 와 무관하게 전부를 여는 모드라서다. 처음
