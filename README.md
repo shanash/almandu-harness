@@ -21,6 +21,8 @@ npm i -D github:shanash/almandu-harness#<tag>   # 비공개 리포 — 설치하
 npm i -D file:../module-harness    # 로컬 개발
 ```
 
+npm 12 부터 git 의존은 기본으로 막힌다 — 태그로 설치하는 소비 리포는 `.npmrc` 에 `allow-git=root` 를 둔다.
+
 설치한 리포는 계약서에서 이 패키지를 `in [[harness]] … (외부: almandu-harness)` 로 인용한다 (R14).
 게이트는 `node_modules/` 를 걷지 않으므로 이 패키지의 계약서는 소비 리포의 판정 대상이 아니다 —
 그쪽 계약은 이 리포에서 판정된다.
