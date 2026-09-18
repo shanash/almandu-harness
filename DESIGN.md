@@ -45,7 +45,7 @@ README 는 이 구멍을 "사람과 에이전트의 습관에 기대고 있다" 
 | 4a | 게이트의 기계 판독 출력 (`--json`, `--scope`) | 루프가 텍스트를 파싱하지 않고 게이트를 부른다 | 끝남 `ad01d04` |
 | 4b | scope → change → reconcile 루프 | 이 리포 자신의 게이트 수정 한 건이 루프만으로 커밋까지 간다 | 끝남 `322d1e6` (observations/03 §1) |
 | 5 | 계약 기반 리뷰 | 리뷰 지적이 전부 특정 불변식 ID 를 인용한다 | 끝남 (2026-09-17) — 구조는 섰고 오탐 없이 돌았지만 실전 검출로 값을 입증하지는 못했다. 세 질문 중 둘을 내리고 불변식 판정자 하나를 남겼다 (DESIGN-review 3·10절, observations/05 결론). 왼쪽 조건은 DESIGN-review 가 대체했고 종료를 판단한 것은 그 10절이다 |
-| 운영 | 버전·배포·CI·설치 | 소비 리포가 태그로 고정해서 설치한다 | 도구·CI 는 끝남 `686f8c1`. 소비 리포 전환은 남았다 |
+| 운영 | 버전·배포·CI·설치 | 소비 리포가 태그로 고정해서 설치한다 | 끝남 — 도구·CI `686f8c1`, 소비 리포 전환 2026-09-18: kod-remastered 가 `github:shanash/almandu-harness#v0.7.0` 으로 설치하고 계약 11장이 게이트를 통과한다 (kod `97b073bd`) |
 
 0 은 즉시. 4a 는 4b 의 선행이다. 운영은 4b 와 병행할 수 있지만 **버전 규칙만은 4a 전에**
 정해야 한다 — `--json` 의 출력 모양이 공개 계약이 되는 순간부터 바꾸는 값이 비싸진다.
@@ -274,7 +274,7 @@ FAIL 이 된다. 7절 버전 표의 첫 줄이 정확히 그것을 major 라고 
 `file:../module-harness` 는 같은 머신에서만 산다. 다음은 git 태그다:
 
 ```
-npm i -D github:shanash/module-harness#v0.6.0
+npm i -D github:shanash/almandu-harness#v0.7.0
 ```
 
 레지스트리 공개는 지금 안 한다. 얻는 게 설치 문자열 단축뿐이고, 이름 선점과 공개 범위를
@@ -284,6 +284,8 @@ npm i -D github:shanash/module-harness#v0.6.0
 2026-09-18 — GitHub `shanash/module-harness` 를 비공개로 만들었다. 설치 문자열은 위 그대로이고 설치하는 머신마다 SSH 키가 있어야 한다. 공개 여부는 10절 미결이다. 밀어 올린 태그는 옮기지 않는다 — 고칠 것이 생기면 다음 버전을 찍는다.
 
 2026-09-18 — 0.7.0 에서 패키지 이름은 `almandu-harness` 가 됐지만 GitHub 리포와 로컬 디렉토리는 여전히 `module-harness` 다. npm 은 설치 문자열의 리포 이름과 무관하게 `package.json` 의 `name` 자리에 설치하므로 위 설치 문자열은 그대로 `node_modules/almandu-harness/` 를 만든다. 둘을 바꾸는 것은 따로 하는 사람의 일이다 — GitHub 는 옛 URL 을 새 이름으로 넘겨 주지만, 디렉토리를 바꾸면 소비 리포의 `file:../module-harness` 가 끊기므로 소비 리포가 옮긴 뒤에만 한다 (10절 미결).
+
+2026-09-18 — GitHub 리포 이름도 `shanash/almandu-harness` 로 바뀌었다. 옛 이름은 넘겨 받지 못한다 — `git ls-remote git@github.com:shanash/module-harness.git` 이 "Repository not found" 를 내므로 위 문단의 "옛 URL 을 넘겨 준다" 는 틀렸다. 그래서 소비 리포는 0.6.0 을 건너뛰고 새 이름의 v0.7.0 으로 바로 옮겼다 (kod `97b073bd`). v0.7.0 태그 안의 README 설치 줄은 옛 리포 이름을 들고 있다 — 밀어 올린 태그는 옮기지 않으므로 main 의 README 가 바른 판이다. 로컬 디렉토리는 아직 `module-harness` 다 (10절 미결).
 
 ### CI
 
@@ -373,5 +375,5 @@ almandu 에서 가져오지 않는 것을 명시한다. 나중에 "왜 안 가�
 - 옛 bin 별칭(`module-gate`·`module-harness-init`·`module-loop`)을 언제 뺄지 (7절 버전 표) —
   소비 리포의 훅·커맨드·설정 어디에도 옛 이름을 부르는 곳이 없을 때 뺀다. 빼는 것은 첫 줄과
   같은 급의 변경으로 낸다. 설치 도구가 이미 놓은 훅은 덮어쓰지 않으므로 소비 리포가 스스로 옮겨야 그 조건이 찬다
-- GitHub 리포(`shanash/module-harness`)와 로컬 디렉토리의 이름을 `almandu-harness` 로 바꿀지 — 사람이
-  정할 일이다 (7절 배포). 디렉토리는 소비 리포가 `file:../module-harness` 를 떠난 뒤에만 바꾼다
+  2026-09-18 — kod-remastered 는 이 조건을 채웠다 (kod `97b073bd`: 훅·`am-gate.json` 은 파일 경로로, 커맨드·CLAUDE.md 는 `almandu-*` 로 부른다). 빼는 것은 여전히 첫 줄과 같은 급의 별도 버전이다
+- ~~GitHub 리포(`shanash/module-harness`)와 로컬 디렉토리의 이름을 `almandu-harness` 로 바꿀지~~ — 리포는 바꿨다 (2026-09-18, 7절 배포). 로컬 디렉토리만 남았고, 막던 조건(소비 리포의 `file:../module-harness`)은 kod `97b073bd` 로 풀렸다. 바꾸면 kod `/module-work` 가 관찰 행을 적는 경로(`../module-harness/observations/…`)도 함께 옮긴다

@@ -17,7 +17,7 @@
 
 ```
 npm i -D almandu-harness           # 레지스트리에 올린 뒤
-npm i -D github:shanash/module-harness#<tag>   # 리포 이름은 아직 그대로 — 설치되는 이름은 almandu-harness 다
+npm i -D github:shanash/almandu-harness#<tag>   # 비공개 리포 — 설치하는 머신에 GitHub SSH 키가 있어야 한다
 npm i -D file:../module-harness    # 로컬 개발
 ```
 
@@ -120,8 +120,9 @@ R1 이 코드와 계약을 한 커밋에 묶기 때문이다: 쪼갤 수 없으�
 | R14 표지 | `(외부: module-harness)` | `(외부: almandu-harness)` |
 
 바뀌지 않은 것: 파일 이름(`module-gate.mjs`·`module-harness-init.mjs`·`loop/loop.mjs`), 게이트 출력 접두사
-(`module-gate:`), 루프 상태 디렉토리(`.git/module-loop/`), `MODULE_GATE`, 플래그·종료 코드·트레일러 형식,
-GitHub 리포 이름(`shanash/module-harness`). 옛 이력과 `observations/` 의 `module-harness` 는 당시의 이름이라 고치지 않는다.
+(`module-gate:`), 루프 상태 디렉토리(`.git/module-loop/`), `MODULE_GATE`, 플래그·종료 코드·트레일러 형식.
+옛 이력과 `observations/` 의 `module-harness` 는 당시의 이름이라 고치지 않는다.
+GitHub 리포 이름도 `shanash/almandu-harness` 로 바뀌었다 — 옛 이름은 넘겨 받지 못하므로 설치 문자열은 새 이름으로 쓴다.
 
 소비 리포에서 옮길 것 — 패키지 이름에는 별칭이 없으므로 아래는 **한 커밋**이어야 한다
 (R14 는 표지를 설치 목록과 대조하므로 표지와 설치가 따로 움직이면 FAIL 이다):
