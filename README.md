@@ -8,7 +8,8 @@
 - module-gate.mjs — 게이트 (R0~R14)
 - module-gate.test.mjs — 게이트 자신의 회귀 테스트. 어느 리포의 계약서도 입력으로 쓰지 않는다
 - module-harness-init.mjs — 소비 리포에 훅·계약 문단·어댑터를 놓는 설치 도구
-- loop/ — 변경을 계약 앞에 세우는 루프 (패키지에는 실리지 않는다)
+- loop/ — 변경을 계약 앞에 세우는 루프 (0.6.0 부터 `loop.mjs` 가 bin `module-loop` 으로 패키지에 실린다)
+- review/personas/ — 리뷰 패킷 하나에 답 하나를 내는 질문 프롬프트 (패키지에 실린다)
 - observations/ — 게이트를 실제로 돌려 보고 남긴 관찰. 규칙이 왜 생겼는지의 출처다
 
 ## 설치
@@ -22,6 +23,8 @@ npm i -D file:../module-harness    # 로컬 개발
 설치한 리포는 계약서에서 이 패키지를 `in [[harness]] … (외부: module-harness)` 로 인용한다 (R14).
 게이트는 `node_modules/` 를 걷지 않으므로 이 패키지의 계약서는 소비 리포의 판정 대상이 아니다 —
 그쪽 계약은 이 리포에서 판정된다.
+
+리포는 비공개다 — 설치하는 머신마다 GitHub SSH 키(또는 토큰)가 있어야 한다.
 
 설치한 뒤 한 번 돌린다:
 
@@ -97,4 +100,4 @@ R1 이 코드와 계약을 한 커밋에 묶기 때문이다: 쪼갤 수 없으�
 스스로 통과를 선언할 자리는 없다. 기준선은 `.git/module-loop/` 안에서만 살고 HEAD 와 게이트 소스
 해시로 봉인되어, 둘 중 하나라도 움직이면 세션을 거부한다.
 
-루프는 아직 패키지에 실리지 않는다 (`files` 화이트리스트 밖). 첫 소비자가 이 리포 자신이다.
+소비 리포에서는 `npx --no-install module-loop <명령>` 으로 같은 CLI 를 부른다 (0.6.0 부터). 명령·플래그·종료 코드·트레일러 형식은 공개 표면이라 DESIGN.md 7절 버전 표를 따른다. 페르소나는 `node_modules/module-harness/review/personas/` 에 실린다. 리뷰 커맨드(`.claude/commands/module-review.md`)는 경로가 리포마다 달라 싣지 않는다 — 소비 리포가 사본을 두고 그 출처 줄이 이 리포와 태그를 가리킨다.
