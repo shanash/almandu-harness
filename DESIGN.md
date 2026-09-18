@@ -287,6 +287,8 @@ npm i -D github:shanash/almandu-harness#v0.7.0
 
 2026-09-18 — GitHub 리포 이름도 `shanash/almandu-harness` 로 바뀌었다. 옛 이름은 넘겨 받지 못한다 — `git ls-remote git@github.com:shanash/module-harness.git` 이 "Repository not found" 를 내므로 위 문단의 "옛 URL 을 넘겨 준다" 는 틀렸다. 그래서 소비 리포는 0.6.0 을 건너뛰고 새 이름의 v0.7.0 으로 바로 옮겼다 (kod `97b073bd`). v0.7.0 태그 안의 README 설치 줄은 옛 리포 이름을 들고 있다 — 밀어 올린 태그는 옮기지 않으므로 main 의 README 가 바른 판이다. 로컬 디렉토리는 아직 `module-harness` 다 (10절 미결).
 
+2026-09-18 — GitHub 리포를 공개로 바꿨다. 이유는 태그 보호다 — 개인 계정의 비공개 리포에는 ruleset 이 막혀 있어(HTTP 403) "밀어 올린 태그는 옮기지 않는다" 가 약속으로만 서 있었고, 소비 리포의 `package.json` 이 태그를 가리키므로 lock 을 다시 만들면 옮겨진 태그를 그대로 받는다. ruleset `release-tags-immutable` 이 `refs/tags/v*` 의 삭제·이동을 막고 우회자를 두지 않는다 — 소유자도 태그를 못 옮기므로 고칠 것이 생기면 다음 버전을 찍는다. 설치하는 머신에 SSH 키가 필요 없어졌다. 공개된 것에는 `observations/` 와 이력의 kod-remastered 경로·계약 인용이 들어 있다 — 그것을 감수한 결정이다.
+
 ### CI
 
 `.github/workflows/ci.yml` 이 이 셋을 돌린다 (2026-09-12):
@@ -354,7 +356,7 @@ almandu 에서 가져오지 않는 것을 명시한다. 나중에 "왜 안 가�
 - ~~`--scope` 가 조상 계약을 내는가 (4절)~~ — 낸다. 4b 를 다섯 번 돌려 보니 체인이 1~2장이라
   "루트 계약이 매번 실린다" 는 비용이 걱정한 만큼 크지 않았고, 조상을 알아야 `commit` 이
   "계약을 안 연 경로" 를 판정할 수 있다. 부르는 쪽이 앞에서 자를 수 있다는 여지는 그대로 둔다
-- 레지스트리 공개 여부와 `private: false`, 그리고 GitHub 리포의 공개 여부 — 지금은 비공개다 (7절 배포)
+- 레지스트리 공개 여부와 `private: false` — 지금은 올리지 않는다 (7절 배포). GitHub 리포의 공개 여부는 닫았다 — 2026-09-18 공개, 태그 보호 때문이다 (7절 배포)
 - `watch` 에 `.md` 가 `MODULE-schema-v1.md` 하나뿐이라 이 문서와 `observations/` 의 유실은
   아무도 안 잡는다. 이 문서가 추적 대상이 되면서 그 미결이 한 칸 더 무거워졌다 —
   `DESIGN.md` 를 `watch` 에 넣으면 게이트 수정마다 이 문서를 고치라고 요구하게 되므로
