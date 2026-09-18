@@ -1,6 +1,6 @@
 {
   "commands": [
     { "name": "test", "run": "npm run -s test", "blocking": true },
-    { "name": "contract", "run": "npx module-gate --staged", "blocking": true }
+    { "name": "contract", "run": "node module-gate.mjs --staged", "blocking": true }
   ]
 }

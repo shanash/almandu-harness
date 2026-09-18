@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// module-harness-init.mjs — 소비 리포에 하네스를 설치한다 (DESIGN.md 7절)
-// 사용: npx module-harness-init [--dry-run] [--hooks-path <디렉토리>] [--no-config]
+// module-harness-init.mjs — 소비 리포에 하네스(almandu-harness)를 설치한다 (DESIGN.md 7절)
+// 사용: npx --no-install almandu-harness-init [--dry-run] [--hooks-path <디렉토리>] [--no-config]  (옛 이름 module-harness-init 은 별칭)
 //
 // 손으로 하던 셋을 대신한다: pre-commit 훅 작성, 루트 CLAUDE.md 에 계약 문단 추가,
 // MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리에 어댑터 생성.
@@ -34,8 +34,8 @@ function adapterText() {
 }
 
 const HOOK = `#!/bin/sh
-# module-harness — 계약 게이트. 인덱스만 본다 (작업 트리 모드와 판정이 다르다)
-exec npx --no-install module-gate --staged
+# almandu-harness — 계약 게이트. 인덱스만 본다 (작업 트리 모드와 판정이 다르다)
+exec npx --no-install almandu-module-gate --staged
 `;
 
 // 루트 CLAUDE.md 가 계약 체계를 한 번은 말해야 한다. 어댑터는 재귀하지 않으므로
@@ -44,7 +44,7 @@ const ROOT_PARAGRAPH = `
 ## 계약
 
 파일을 고치기 전에 그 파일을 소유한 **가장 깊은 MODULE.md** 를 읽는다.
-어느 것인지 모르면 \`npx module-gate --scope <경로>\` 가 답한다.
+어느 것인지 모르면 \`npx --no-install almandu-module-gate --scope <경로>\` 가 답한다.
 불변식을 깨는 변경은 먼저 MODULE.md 를 고치고 이력을 남긴다.
 `;
 
@@ -110,4 +110,4 @@ for (const d of done) console.log(`${dryRun ? 'DRY ' : ''}+ ${d}`);
 for (const s of skipped) console.log(`  · ${s}`);
 if (!done.length) console.log('바꿀 것이 없다 — 이미 설치돼 있다');
 else if (dryRun) console.log('\n--dry-run: 아무것도 쓰지 않았다');
-else console.log('\n다음: 모듈마다 MODULE.md 를 쓰고 `npx module-gate` 로 확인한다 (MODULE-schema-v1.md 가 규칙서다)');
+else console.log('\n다음: 모듈마다 MODULE.md 를 쓰고 `npx --no-install almandu-module-gate` 로 확인한다 (MODULE-schema-v1.md 가 규칙서다)');

@@ -1,8 +1,11 @@
 {
-  "name": "module-harness",
-  "version": "0.6.0",
+  "name": "almandu-harness",
+  "version": "0.7.0",
   "description": "MODULE.md 계약 게이트 — 디렉토리별 계약을 커밋 시점에 판정한다",
   "bin": {
+    "almandu-module-gate": "module-gate.mjs",
+    "almandu-harness-init": "module-harness-init.mjs",
+    "almandu-module-loop": "loop/loop.mjs",
     "module-gate": "module-gate.mjs",
     "module-harness-init": "module-harness-init.mjs",
     "module-loop": "loop/loop.mjs"

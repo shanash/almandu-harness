@@ -14,19 +14,20 @@ MODULE.md 계약 체계 자체를 소유한다 — 스키마(`MODULE-schema-v1.m
 리뷰 페르소나 프롬프트(`review/personas/`)와 그것을 돌리는 커맨드(`.claude/commands/`)는 여기 있다 — 판정도 판단도 담지 않는 텍스트라 게이트에도 루프에도 속하지 않는다. 페르소나 수는 질문 수를 따라간다 — 질문이 늘 때만 늘고, 10회 연속 통과한 질문은 내려서 준다 (DESIGN-review.md 3·6·11절).
 
 ## 진입점
-- `npx module-gate [--staged|--base <ref>|--fix|--audit|--json]` — module-gate.mjs:657,664,669 (판정 결과를 종료 코드로 낸다)
-- `npx module-gate --scope <경로>...` — module-gate.mjs:124 (판정하지 않는다: 그 경로를 고치려면 읽어야 할 계약을 깊은 것부터 낸다)
-- `npm test` — module-gate.test.mjs:16 (게이트의 회귀 테스트 58개, 설치 도구 7개. 같은 명령이 [[loop]] 의 테스트도 함께 돌린다)
-- `npx module-gate --review` — module-gate.mjs:354 (판정하지 않는다: 이 diff 를 리뷰할 때 봐야 할 불변식을 태그별로 낸다)
-- `npx module-harness-init [--dry-run]` — module-harness-init.mjs:66,80,97 (판정하지 않는다: 훅·루트 문단·어댑터를 놓는다)
+- `npx --no-install almandu-module-gate [--staged|--base <ref>|--fix|--audit|--json]` — module-gate.mjs:657,664,669 (판정 결과를 종료 코드로 낸다)
+- `npx --no-install almandu-module-gate --scope <경로>...` — module-gate.mjs:124 (판정하지 않는다: 그 경로를 고치려면 읽어야 할 계약을 깊은 것부터 낸다)
+- `npm test` — module-gate.test.mjs:16 (게이트의 회귀 테스트 58개, 설치 도구 8개. 같은 명령이 [[loop]] 의 테스트도 함께 돌린다)
+- `npx --no-install almandu-module-gate --review` — module-gate.mjs:354 (판정하지 않는다: 이 diff 를 리뷰할 때 봐야 할 불변식을 태그별로 낸다)
+- `npx --no-install almandu-harness-init [--dry-run]` — module-harness-init.mjs:66,80,97 (판정하지 않는다: 훅·루트 문단·어댑터를 놓는다)
+- 옛 bin 이름 `module-gate`·`module-harness-init`·`module-loop` — 0.7.0 부터 별칭이다. 같은 파일을 가리키고, 소비 리포에 이미 놓인 훅이 옛 이름을 부른다 (package.json bin)
 - `MODULE-schema-v1.md` — 사람과 에이전트가 계약을 쓸 때 읽는 규칙서
-- `review/personas/*.md` — 리뷰 패킷 하나에 답 하나를 내는 질문. 각 파일은 질문·입력 필드·출력 형식·답하지 말 것 네 절이다. 파일은 셋이고 활성은 하나다 — `contract-checker.md` 는 2026-09-16, `scope-watcher.md` 는 2026-09-17 에 내려졌고 파일은 기록으로 남겼다 (DESIGN-review 3절, 활성 목록은 [[loop]] 의 `ALL_PERSONAS`). 0.6.0 부터 패키지에 실린다 — 소비 리포에서는 `node_modules/module-harness/review/personas/` 다.
+- `review/personas/*.md` — 리뷰 패킷 하나에 답 하나를 내는 질문. 각 파일은 질문·입력 필드·출력 형식·답하지 말 것 네 절이다. 파일은 셋이고 활성은 하나다 — `contract-checker.md` 는 2026-09-16, `scope-watcher.md` 는 2026-09-17 에 내려졌고 파일은 기록으로 남겼다 (DESIGN-review 3절, 활성 목록은 [[loop]] 의 `ALL_PERSONAS`). 0.6.0 부터 패키지에 실린다 — 소비 리포에서는 `node_modules/almandu-harness/review/personas/` 다.
 
 ## 의존
 ### in (이 모듈이 쓰는 것)
 - 없음. node 표준 라이브러리 세 모듈과 `git` CLI 만 쓴다 — 설치할 의존이 없어 어느 클론에서나 그대로 돈다 (module-gate.mjs:12-14)
 ### out (이 모듈을 쓰는 것)
-- 없음 — 이 패키지를 쓰는 리포가 자기 `in` 에 `(외부: module-harness)` 로 적는다. 소비자를 여기 세면 리포가 늘 때마다 거짓이 된다 (R14)
+- 없음 — 이 패키지를 쓰는 리포가 자기 `in` 에 `(외부: almandu-harness)` 로 적는다. 소비자를 여기 세면 리포가 늘 때마다 거짓이 된다 (R14)
 
 ## 불변식
 - I1. 판정 수준은 `status` 로만 갈린다 — `active` 는 FAIL, 그 외는 WARN 으로 강등된다. 예외는 R3 의 모듈 후보 경고 하나로 언제나 WARN 이다 (근거: module-gate.mjs:285-286,462-466, module-gate.test.mjs:126,617) [테스트]
@@ -42,6 +43,7 @@ MODULE.md 계약 체계 자체를 소유한다 — 스키마(`MODULE-schema-v1.m
 - 게이트가 자기 계약을 판정한다 — 이 계약서를 어기는 게이트 변경을 그 게이트가 잡을 수 있는지는 순환이고, fixture 테스트가 그 순환을 끊는 유일한 수단이다. 자기 판정의 사각지대 목록은 없다
 
 ## 이력
+- 2026-09-18 0.7.0 — 패키지 이름을 `module-harness` 에서 `almandu-harness` 로 바꾼다. bin 은 새 이름(`almandu-module-gate`·`almandu-harness-init`·`almandu-module-loop`)을 내고 옛 이름 셋을 같은 파일을 가리키는 별칭으로 남겼다 — 소비 리포에 이미 놓인 훅이 `npx --no-install module-gate` 를 부르고, 설치 도구는 있는 훅을 덮어쓰지 않는다. 파일 이름·게이트 출력 접두사(`module-gate:`)·상태 디렉토리(`.git/module-loop/`)는 그대로다: 파일 이름을 바꾸면 근거 인용이 전부 옮겨 가는데 이력은 옛 이름을 들고 있고, 상태 디렉토리를 옮기면 소비 리포의 `keep-verdict.mjs` 가 결과 파일을 못 찾아 조용히 통과한다. 설치 도구가 쓰는 훅과 루트 문단은 새 이름을 부른다. 패키지 이름은 별칭을 둘 수 없어 소비 리포의 `node_modules/module-harness/…` 경로와 R14 표지 `(외부: module-harness)` 는 그쪽에서 설치 목록과 한 커밋으로 옮겨야 한다 — 따로 움직이면 R14 가 운다 (README 이름 변경 절). 0.x 동안 호환성 파괴는 minor 로 쓴다 (DESIGN.md 7절). 스키마는 R14 예시와 bin 이름만 바꿨고 어댑터 블록은 건드리지 않았다(I6). 게이트는 한 줄도 고치지 않았으므로 I1~I6 은 그대로다. 옛 이력·observations 의 `module-harness` 는 고치지 않는다 — 당시의 이름이 기록이다. 소비 리포에 안내하는 `npx` 호출에는 `--no-install` 을 붙였다 — 새 이름은 npm 에 아직 아무도 올리지 않아, 로컬 설치가 없는 머신에서 맨 `npx` 는 레지스트리로 넘어가 남이 선점한 패키지를 받아 실행할 수 있다. 테스트 하나를 더했다 (설치 8)
 - 2026-09-18 0.6.0 — 루프(`loop/loop.mjs`, bin `module-loop`)와 페르소나(`review/`)를 `files` 에 싣는다. 소비 리포(kod-remastered)가 `file:` 심링크를 떠나 태그로 설치하면 심링크로 닿던 루프·페르소나가 사라지기 때문이다 (DESIGN.md 2절 운영). 한 태그가 게이트·루프·페르소나를 함께 고정하는 쪽을 골랐고, 대가는 루프 CLI 가 공개 표면이 된 것이다 — 그 결정과 버전 규칙은 DESIGN.md 7·10절에 있다. minor 인 이유는 표면이 늘었을 뿐 이미 통과하던 계약서를 FAIL 시키지 않기 때문이다. `loop/` 의 테스트·계약서·어댑터와 리뷰 커맨드는 싣지 않았다 — 어댑터가 실리면 소비 리포에서 루프를 Read 할 때 이 리포의 계약이 섞이고, 커맨드는 경로가 리포마다 달라 소비 리포가 사본을 둔다. 게이트·스키마·설치 도구는 고치지 않았으므로 I1~I6 은 그대로다
 - 2026-09-17 0.5.0 — 5e 동안 얼려 둔 루프 결함 셋(observations/05 결함 메모 6·1·7)을 고친 버전을 찍는다. 고친 곳은 전부 [[loop]] 이고 무엇을 왜 그렇게 골랐는지는 그 이력에 있다: 커밋 시점에 패킷을 다시 만들어 리뷰한 트리와 대조하고(`diff.content`), 통과가 아닌 답을 `Review-Verdict:` 트레일러로 남기고, `scope` 가 트리에 없는 경로를 거부한다. minor 인 이유는 패킷 필드·트레일러 줄·거부가 하나씩 늘었을 뿐 이미 통과하던 계약서를 FAIL 시키지 않기 때문이다 (DESIGN.md 7절). 게이트·스키마·설치 도구는 고치지 않았으므로 I1~I6 은 그대로다. 패킷 스키마와 트레일러 형식은 DESIGN-review 2·4·5절에 함께 적었고 13절 미결 한 줄이 닫혔다
 - 2026-09-17 5e 종료 — 범위 감시자를 리뷰에서 내리고 5단계를 닫는다. 종료 조건 ②·③ 은 찼고 ①(실전 검출)은 19커밋에서 0 이다. DESIGN-review 10절은 "셋 다" 와 "셋 다 없음" 만 정해 가운데가 비어 있었고, 이 경우를 **종료**로 읽는 결정을 그 절 끝에 적었다 — ✗ 를 충족으로 고쳐 읽지는 않았다. 기다리지 않은 근거는 `observations/05` 결론 절에 있다: 남은 질문으로는 ① 에 닿을 길이 사실상 없고, 루프를 얼려 둔 탓에 결함 6 이 trailer 네 개를 틀리게 남겼다. 범위 감시자는 14회 연속 `예` 에 더해 질문이 이미 loop I2 였다 — 그 `아니오` 는 커밋될 수 없는 묶음에서만 나온다 (DESIGN-review 3절). 불변식 판정자 하나를 남겼고, 대상이 없으면 돌지 않아 켜 두는 비용이 없다. 5단계 결론은 DESIGN.md 2절 상태표에도 적었다. 게이트는 고치지 않았으므로 I1~I6 은 그대로다

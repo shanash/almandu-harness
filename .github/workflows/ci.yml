@@ -1,4 +1,4 @@
-# module-harness CI — DESIGN.md 7절
+# almandu-harness CI — DESIGN.md 7절
 # PR 은 diff 만 본다. 전수 감사(--audit)는 diff 와 무관하게 전부를 여는 모드라 nightly 로만 돈다:
 # 처음 돌렸을 때 나온 3건 중 하나는 그 작업과 무관하게 전부터 밀려 있던 것이었고,
 # 그런 것은 PR 을 막을 근거가 아니라 따로 쌓아 두고 볼 목록이다.

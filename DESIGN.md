@@ -267,6 +267,8 @@ FAIL 이 된다. 7절 버전 표의 첫 줄이 정확히 그것을 major 라고 
 
 0.6.0 부터 루프 CLI 도 이 표의 대상이다 — 명령·플래그를 빼거나 뜻을 바꾸는 것, 종료 코드(0/1/2)의 뜻을 바꾸는 것, `Review:`·`Review-Verdict:` 트레일러의 형식을 바꾸는 것은 첫 줄과 같은 급이다. 소비 리포의 커맨드와 이미 커밋된 트레일러를 읽는 쪽이 깨진다. 패킷(`review-packet.json`)의 모양은 여기 들지 않는다 — 읽는 쪽인 페르소나가 같은 태그에 실려 함께 움직인다.
 
+2026-09-18 — 0.7.0 에서 패키지 이름이 `module-harness` 에서 `almandu-harness` 로 바뀐다. 소비 리포의 설치 자리(`node_modules/module-harness/…`)가 깨지고 이미 통과하던 `(외부: module-harness)` 표지가 R14 FAIL 이 되므로 첫 줄과 같은 급이다 — 0.x 라 minor 로 쓴다. bin 은 `almandu-module-gate`·`almandu-harness-init`·`almandu-module-loop` 가 정식이고 옛 이름 셋은 같은 파일을 가리키는 별칭이다. 별칭을 나중에 빼는 것도 첫 줄과 같은 급이다 — 이미 놓인 훅이 옛 이름을 부른다 (뺄 조건은 10절 미결).
+
 ### 배포
 
 `file:../module-harness` 는 같은 머신에서만 산다. 다음은 git 태그다:
@@ -281,14 +283,16 @@ npm i -D github:shanash/module-harness#v0.6.0
 
 2026-09-18 — GitHub `shanash/module-harness` 를 비공개로 만들었다. 설치 문자열은 위 그대로이고 설치하는 머신마다 SSH 키가 있어야 한다. 공개 여부는 10절 미결이다. 밀어 올린 태그는 옮기지 않는다 — 고칠 것이 생기면 다음 버전을 찍는다.
 
+2026-09-18 — 0.7.0 에서 패키지 이름은 `almandu-harness` 가 됐지만 GitHub 리포와 로컬 디렉토리는 여전히 `module-harness` 다. npm 은 설치 문자열의 리포 이름과 무관하게 `package.json` 의 `name` 자리에 설치하므로 위 설치 문자열은 그대로 `node_modules/almandu-harness/` 를 만든다. 둘을 바꾸는 것은 따로 하는 사람의 일이다 — GitHub 는 옛 URL 을 새 이름으로 넘겨 주지만, 디렉토리를 바꾸면 소비 리포의 `file:../module-harness` 가 끊기므로 소비 리포가 옮긴 뒤에만 한다 (10절 미결).
+
 ### CI
 
 `.github/workflows/ci.yml` 이 이 셋을 돌린다 (2026-09-12):
 
 ```
-npm test                              # 85개, ~75초
-npx module-gate --base origin/main    # PR 이 계약을 어기는지
-npx module-gate --audit               # 전수 — nightly(03:00 KST)와 수동 실행만
+npm test                                      # 85개, ~75초
+npx --no-install almandu-module-gate --base origin/main    # PR 이 계약을 어기는지
+npx --no-install almandu-module-gate --audit               # 전수 — nightly(03:00 KST)와 수동 실행만
 ```
 
 `--audit` 를 매 PR 에 걸지 않는 이유는 diff 와 무관하게 전부를 여는 모드라서다. 처음
@@ -366,3 +370,8 @@ almandu 에서 가져오지 않는 것을 명시한다. 나중에 "왜 안 가�
   다음 규칙의 자리일 수 있다
 - `--review` 의 "0건" 이 두 가지를 뜻한다 — 리뷰할 것이 없는 변경과 계약이 비어 있는 변경.
   출력이 둘을 구분하지 못한다 (observations/03 §4)
+- 옛 bin 별칭(`module-gate`·`module-harness-init`·`module-loop`)을 언제 뺄지 (7절 버전 표) —
+  소비 리포의 훅·커맨드·설정 어디에도 옛 이름을 부르는 곳이 없을 때 뺀다. 빼는 것은 첫 줄과
+  같은 급의 변경으로 낸다. 설치 도구가 이미 놓은 훅은 덮어쓰지 않으므로 소비 리포가 스스로 옮겨야 그 조건이 찬다
+- GitHub 리포(`shanash/module-harness`)와 로컬 디렉토리의 이름을 `almandu-harness` 로 바꿀지 — 사람이
+  정할 일이다 (7절 배포). 디렉토리는 소비 리포가 `file:../module-harness` 를 떠난 뒤에만 바꾼다
