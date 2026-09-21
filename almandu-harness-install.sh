@@ -42,6 +42,14 @@ DEFAULT_REF="v0.8.0"
 REPO_URL="https://github.com/shanash/almandu-harness"
 GH_BASE="github:shanash/almandu-harness"
 
+# 훅이 게이트를 부르는 형태. init 이 쓰는 훅 본문(module-harness-init.mjs:38)과 **같은 문자열**이고,
+# 테스트 20 이 그 동일성을 고정한다 — 이 파일 안에 이 문자열의 사본은 이것 하나뿐이어야 한다.
+# npx 가 아닌 이유: cwd 가 워크스페이스 멤버면 npm 이 localPrefix 를 워크스페이스 루트로 옮기고,
+# npm <=11 은 멤버의 node_modules/.bin 을 보지 않는다 (2026-09-21 실측: 11.17.0 실패, 12.0.2 통과).
+# 단따옴표다 — $(…) 는 여기서 풀리면 안 되고 훅 안에서·sh -c 안에서 풀려야 한다
+# shellcheck disable=SC2016
+GATE_CALL='node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/module-gate.mjs"'
+
 # ---------- 출력 ----------
 say()  { printf '%s\n' "$*"; }
 ok()   { printf '  · %s\n' "$*"; }
@@ -616,10 +624,12 @@ if [ "$DRY" != 1 ]; then
   [ -z "$WIRE_NOTE" ] || ok "$WIRE_NOTE"
   if [ "$WIRED" = 1 ] && [ -z "$WIRE_NOTE" ]; then ok "게이트: $HOOK_DIR/pre-commit"; fi
 
-  if ! (cd "$ROOT" && npx --no-install almandu-module-gate --scope . >/dev/null 2>&1); then
-    die "npx --no-install almandu-module-gate 가 풀리지 않는다 — 훅도 같은 방식으로 실패한다"
+  # 훅과 같은 문자열을, 훅과 같은 셸(sh)로, 훅과 같은 cwd(git 최상위)에서 돌린다.
+  # --staged 가 아니라 --scope . 인 이유: --staged 는 판정이라 FAIL 이 1 이고 그 1 은 설치 실패가 아니다
+  if ! (cd "$ROOT" && sh -c "$GATE_CALL --scope ." >/dev/null 2>&1); then
+    die "게이트가 실행되지 않는다: $GATE_CALL — 훅도 같은 방식으로 실패한다"
   fi
-  ok "게이트 실행 확인: npx --no-install almandu-module-gate --scope ."
+  ok "게이트 실행 확인: $GATE_CALL --scope ."
 
   case "$(command -v node)" in
     */.nvm/*) warn "node 가 nvm 아래에 있다 — GUI git 클라이언트는 그 PATH 를 못 볼 수 있다. 훅이 node 를 절대 경로로 부르게 두는 편이 안전하다" ;;
@@ -658,7 +668,7 @@ fi
 if [ "$WIRED" != 1 ]; then
   say ""
   say "게이트가 연결되지 않았다"
-  _line='npx --no-install almandu-module-gate --staged || exit $?'
+  _line="$GATE_CALL --staged || exit \$?"
   case "$HOOK_STATE" in
     inherited)
       if [ -n "$GLOBAL_CHAINS" ]; then

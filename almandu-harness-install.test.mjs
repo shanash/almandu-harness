@@ -180,11 +180,24 @@ test('hwatu 회귀: 부모에 package.json·node_modules·workspaces 가 있어�
   const r = f.mk('parent/child');
 
   const got = install(f, r.dir);
-  // exit 0 은 phase 7 의 npx --no-install 정상 동작까지 포함한다 (D5)
+  // exit 0 은 phase 7 이 훅과 같은 문자열을 sh 로 돌려 게이트가 실제로 실행된 것까지 포함한다 (D5 정정: MODULE.md 이력)
   assert.equal(got.code, 0, got.out);
   assert.ok(has(r.dir, 'node_modules/almandu-harness'));
   assert.deepEqual(readFileSync(join(parent, 'package.json')), parentBytes);
   assert.equal(existsSync(join(parent, 'node_modules/almandu-harness')), false);
+
+  // 훅이 npm 의 해소를 쓰지 않는다는 것을 npm 버전과 무관하게 고정한다.
+  // npx 를 127 로 죽는 스텁으로 가린 채 훅을 돌린다 — 옛 npx 훅이면 여기서 운다
+  const stub = join(f.box, 'stub-npx');
+  mkdirSync(stub, { recursive: true });
+  const npxSeen = join(f.box, 'npx-seen.txt');
+  writeFileSync(join(stub, 'npx'), `#!/bin/sh\nprintf 'called\\n' > "${npxSeen}"\nexit 127\n`);
+  chmodSync(join(stub, 'npx'), 0o755);
+  const hook = spawnSync('sh', [join(r.dir, '.githooks/pre-commit')],
+    { cwd: r.dir, env: { ...f.env, PATH: `${stub}:${f.env.PATH}` }, encoding: 'utf8' });
+  const hookOut = `${hook.stdout ?? ''}${hook.stderr ?? ''}`;
+  assert.equal(hook.status, 0, hookOut);
+  assert.equal(existsSync(npxSeen), false, `훅이 아직 npx 를 지난다: ${hookOut}`);
 });
 
 // ---------- 6 ----------
@@ -247,7 +260,7 @@ test('남의 pre-commit 이 있는 로컬 hooksPath 는 건드리지 않는다 (
   assert.equal(got.code, 3, got.out);
   assert.equal(localHooksPath(f, r.dir).stdout.trim(), 'tools/git-hooks');
   assert.equal(read(r.dir, 'tools/git-hooks/pre-commit'), foreign);
-  assert.match(got.out, /almandu-module-gate --staged/);
+  assert.match(got.out, /module-gate\.mjs" --staged \|\| exit \$\?/);
 });
 
 // ---------- 9 ----------
@@ -340,7 +353,7 @@ test('.git/hooks 에서 돌고 있는 훅은 말없이 끄지 않는다 (exit 3)
   assert.equal(readdirSync(hookDir).sort().join(','), before);
   assert.equal(readFileSync(join(hookDir, 'commit-msg'), 'utf8'), beforeText);
   assert.match(got.out, /commit-msg/);
-  assert.match(got.out, /almandu-module-gate --staged/);
+  assert.match(got.out, /module-gate\.mjs" --staged \|\| exit \$\?/);
 
   const over = install(f, r.dir, '--override-hooks');
   assert.equal(over.code, 0, over.out);
@@ -440,7 +453,7 @@ test('--no-config 에서도 게이트를 부르는 훅이 없으면 exit 3 이�
   const got = install(f, a.dir, '--no-config');
   assert.equal(got.code, 3, got.out);
   assert.equal(read(a.dir, '.githooks/pre-commit'), before);
-  assert.match(got.out, /almandu-module-gate --staged/);
+  assert.match(got.out, /module-gate\.mjs" --staged \|\| exit \$\?/);
 
   // 이 머신의 기본 arm 이 --no-config 쪽이다. 그 arm 에서 커맨드 꼬리가 먹는지를 여기서 고정한다
   const b = f.mk('nocmd');
@@ -592,4 +605,24 @@ test('정지 가드는 우리 git 과 npm 이 부르는 git 에 닿고, 부르�
   assert.equal(existsSync(npmSeen), true, `npm 이 git 을 부르지 않았다: ${out3}`);
   assert.equal(readFileSync(npmSeen, 'utf8').trim(),
     'http.lowSpeedLimit=1|http.lowSpeedTime=60');
+});
+
+// ---------- 20 ----------
+// 같은 명령이 두 파일에 산다 — init 이 훅 본문을 쓰고(원본), 스크립트가 phase 7 에서 돌리고
+// phase 8 에서 붙여 넣을 줄로 낸다. 갈라지면 스크립트의 검사가 훅과 다른 것을 증명하게 된다 (I6·I7 과 같은 이유)
+test('훅 본문과 스크립트의 게이트 호출은 한 문자열이다', { skip: SKIP }, (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'harness-tie-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  spawnSync('git', ['-C', dir, 'init', '-q', '--template=']);
+  const got = spawnSync('node', [join(HERE, 'module-harness-init.mjs'), '--no-config', '--no-commands'],
+    { cwd: dir, encoding: 'utf8' });
+  assert.equal(got.status, 0, `${got.stdout}${got.stderr}`);
+  const call = readFileSync(join(dir, '.githooks/pre-commit'), 'utf8')
+    .split('\n').find((l) => l.startsWith('exec ')).slice(5).replace(' --staged', '');
+  const script = readFileSync(SCRIPT, 'utf8');
+  assert.equal(script.split(call).length - 1, 1,
+    `스크립트에 훅의 호출 문자열 사본이 ${script.split(call).length - 1} 개다 — 하나(GATE_CALL)여야 한다`);
+  assert.ok(script.includes(`GATE_CALL='${call}'`), `GATE_CALL 이 훅 본문과 다르다: ${call}`);
+  assert.match(script, /_line="\$GATE_CALL --staged \|\| exit \\\$\?"/);
+  assert.match(script, /sh -c "\$GATE_CALL --scope \."/);
 });

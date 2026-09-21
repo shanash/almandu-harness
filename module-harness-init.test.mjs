@@ -41,7 +41,7 @@ test('빈 리포에 훅·루트 문단·어댑터 셋을 놓는다', (t) => {
   r.write('alpha/MODULE.md', '---\nmodule: alpha\n---\n');
   const got = init(r.dir);
   assert.equal(got.code, 0, got.out);
-  assert.match(read(r.dir, '.githooks/pre-commit'), /almandu-module-gate --staged/);
+  assert.match(read(r.dir, '.githooks/pre-commit'), /^exec node "\$\(git rev-parse --show-toplevel\)\/node_modules\/almandu-harness\/module-gate\.mjs" --staged$/m);
   assert.match(read(r.dir, 'CLAUDE.md'), /가장 깊은 MODULE\.md/);
   assert.equal(read(r.dir, 'alpha/CLAUDE.md'), adapterFromSchema());
   assert.equal(execSync('git config --local --get core.hooksPath', { cwd: r.dir, encoding: 'utf8' }).trim(), '.githooks');
@@ -102,14 +102,14 @@ test('--hooks-path 에 값이 없으면 거부한다', (t) => {
   assert.match(got.out, /디렉토리가 필요하다/);
 });
 
-test('훅이 부르는 bin 은 package.json 에 있고 옛 이름은 같은 파일을 가리킨다', (t) => {
+test('훅이 부르는 파일은 패키지에 실리고 bin 과 같다 — 경로 형태가 사라지면 match 가 던진다', (t) => {
   const pkg = JSON.parse(readFileSync(join(HERE, 'package.json'), 'utf8'));
   const r = newRepo(t);
   init(r.dir);
-  const bin = read(r.dir, '.githooks/pre-commit').match(/npx --no-install (\S+)/)[1];
-  assert.ok(pkg.bin[bin], `훅이 없는 bin 을 부른다: ${bin}`);
-  for (const [old, now] of [['module-gate', 'almandu-module-gate'],
-    ['module-harness-init', 'almandu-harness-init'], ['module-loop', 'almandu-module-loop']])
+  const rel = read(r.dir, '.githooks/pre-commit').match(/almandu-harness\/(\S+)" --staged/)[1];
+  assert.ok(pkg.files.includes(rel), `훅이 부르는 ${rel} 이 files 에 없다 — 설치된 리포에 그 파일이 없다`);
+  assert.equal(pkg.bin['almandu-module-gate'], rel, '훅이 부르는 파일과 bin 이 가리키는 파일이 다르다');
+  for (const [old, now] of [['module-gate', 'almandu-module-gate'], ['module-harness-init', 'almandu-harness-init'], ['module-loop', 'almandu-module-loop']])
     assert.equal(pkg.bin[old], pkg.bin[now], `별칭 ${old} 이 ${now} 와 다른 파일을 가리킨다`);
 });
 

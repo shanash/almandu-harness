@@ -48,7 +48,7 @@ curl -fsSL https://raw.githubusercontent.com/shanash/almandu-harness/<태그>/al
 | 코드 | 뜻 |
 |---|---|
 | 0 | 설치됐고 pre-commit 이 게이트를 부른다 |
-| 1 | 실패·거부 (도구 없음, git 아님, pnpm/yarn/bun, allow-git 충돌, npm 실패, 설치 자리 확인 실패) |
+| 1 | 실패·거부 (도구 없음, git 아님, pnpm/yarn/bun, allow-git 충돌, npm 실패, 설치 자리 확인 실패, 설치된 게이트가 실행되지 않음) |
 | 2 | 사용법 (모르는 옵션, `<대상>` 없음, `--ref` 와 `--spec` 동시, v0.7.0 미만 태그, 절대 `--hooks-path`) |
 | 3 | 설치는 됐지만 pre-commit 이 게이트를 부르지 않는다 |
 
@@ -86,6 +86,13 @@ npx --no-install almandu-harness-init
 MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리의 어댑터, `.claude/commands/` 의 커맨드 셋(`--no-commands` 로 끈다). 이미 있는 파일은 덮어쓰지 않고,
 이미 있는 CLAUDE.md 에는 어댑터를 맨 앞에 얹는다. 두 번 돌려도 같은 상태다.
 
+훅은 게이트를 npx 가 아니라 **파일 경로**로 부른다 —
+`node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/module-gate.mjs" --staged`.
+대상이 npm 워크스페이스의 멤버면 npm 이 localPrefix 를 워크스페이스 루트로 옮겨 멤버의
+`node_modules/.bin` 을 보지 않고(npm 11 이하), 그러면 훅이 판정 대신 npm 오류로 커밋을 막는다.
+설치 스크립트의 phase 7 은 그 **같은 문자열**을 같은 셸로 돌려 실제로 실행되는지까지 확인한다 —
+확인이 실패하면 설치는 끝났어도 종료 코드 1 이다.
+
 어댑터 문구는 `MODULE-schema-v1.md` 에서 읽어 쓴다 — 설치 도구 안에 사본을 두지 않는다.
 "로드되는 자리마다 같은 문장이 와야 한다" 가 약속이 아니라 구조인 자리다.
 
@@ -100,11 +107,14 @@ npx --no-install almandu-module-gate --audit             # diff 무관: 인용 �
 npx --no-install almandu-module-gate --json              # 같은 판정을 기계 판독 형태로 (stdout 전용)
 npx --no-install almandu-module-gate --scope <경로>...   # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
 npx --no-install almandu-module-gate --review            # 판정 안 함: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그
-npm test                                                 # 회귀 테스트 132개, ~85초
+npm test                                                 # 회귀 테스트 134개, ~85초
 ```
 
 `--no-install` 은 뺄 수 없다 — `almandu-*` 이름은 npm 에 올라가 있지 않아서, 로컬 설치가 없는 머신에서 맨 `npx` 는
 레지스트리로 넘어가 같은 이름으로 선점된 남의 패키지를 받아 실행할 수 있다.
+다만 그것이 막는 것은 **실행**이지 조회가 아니다 — 2026-09-21 실측(npm 11.17.0·12.0.2): 이름이 로컬에서 풀리지
+않으면 `--no-install` 이어도 `registry.npmjs.org` 로 요청이 나가고 거기서 매달린다 (`--offline` 이면 `ENOTCACHED` 로
+빨리 죽는다). 그래서 사람 없이 매 커밋마다 도는 훅은 npx 를 아예 쓰지 않고 파일 경로로 부른다 (위 설치 절).
 
 의존은 node 표준 라이브러리와 `git` CLI 뿐이다. 종료 코드로만 말한다 — FAIL 이 하나라도 있으면 1.
 `--json` 도 마찬가지다. 봉투의 `fail` 은 종료 코드와 같은 말이고, 그것이 부르는 쪽이 판정을 다시
