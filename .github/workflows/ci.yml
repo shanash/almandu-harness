@@ -23,6 +23,8 @@ jobs:
         with:
           node-version: '20'
       - run: npm test
+      # ubuntu-latest 에 미리 깔려 있다 — 새로 설치하는 것이 없다
+      - run: shellcheck almandu-harness-install.sh
 
   gate:
     runs-on: ubuntu-latest

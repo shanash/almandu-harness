@@ -7,25 +7,27 @@ watch: .mjs,MODULE-schema-v1.md
 ---
 
 ## 책임
-MODULE.md 계약 체계 자체를 소유한다 — 스키마(`MODULE-schema-v1.md`), 커밋 때 계약을 판정하는 게이트(`module-gate.mjs`), 소비 리포에 그 체계를 놓는 설치 도구(`module-harness-init.mjs`), 둘의 회귀 테스트(`module-gate.test.mjs`·`module-harness-init.test.mjs`), 게이트를 실제로 돌려 보고 남긴 관찰(`observations/`), 그리고 앞으로 무엇을 하기로 했는지(`DESIGN.md`, 5단계는 `DESIGN-review.md` 가 그 5절을 대체하고 세션 프롬프트는 `harness-stage5-prompts.md` 에 있다).
+MODULE.md 계약 체계 자체를 소유한다 — 스키마(`MODULE-schema-v1.md`), 커밋 때 계약을 판정하는 게이트(`module-gate.mjs`), 소비 리포에 그 체계를 놓는 설치 도구(`module-harness-init.mjs`)와 그 앞에서 패키지를 설치하는 스크립트(`almandu-harness-install.sh`, 패키지에 싣지 않는다), 셋의 회귀 테스트(`module-gate.test.mjs`·`module-harness-init.test.mjs`·`almandu-harness-install.test.mjs`), 게이트를 실제로 돌려 보고 남긴 관찰(`observations/`), 그리고 앞으로 무엇을 하기로 했는지(`DESIGN.md`, 5단계는 `DESIGN-review.md` 가 그 5절을 대체하고 세션 프롬프트는 `harness-stage5-prompts.md` 에 있다).
 `observations/` 와 `DESIGN.md` 의 자리가 이 계약의 경계선이다 — 앞의 것은 규칙이 왜 생겼는지의, 뒤의 것은 다음 규칙이 왜 생길지의 유일한 출처라 둘 다 재생성되지 않는다. 그래서 계약서와 같은 급이고 이 디렉토리가 옮겨질 때 하네스를 따라간다. 일회성 작업 로그는 여기 두지 않는다.
 프로젝트 고유 규칙은 담지 않는다 — 각 디렉토리의 MODULE.md·CLAUDE.md 는 그 디렉토리에 남고, 커밋을 실제로 막는 훅은 이 게이트를 설치한 리포에 있다. 이 패키지는 판정만 하고 차단은 종료 코드로 넘긴다.
 변경을 계약 앞에 세우는 루프(`loop/`)는 [[loop]] 이 소유한다 — 배포 단위만 같고, 판정을 담지 않는 쪽이라 소유가 다르다.
-리뷰 페르소나 프롬프트(`review/personas/`)와 그것을 돌리는 커맨드(`.claude/commands/`)는 여기 있다 — 판정도 판단도 담지 않는 텍스트라 게이트에도 루프에도 속하지 않는다. 페르소나 수는 질문 수를 따라간다 — 질문이 늘 때만 늘고, 10회 연속 통과한 질문은 내려서 준다 (DESIGN-review.md 3·6·11절).
+리뷰 페르소나 프롬프트(`review/personas/`)와 커맨드 둘 다 여기 있다 — 판정도 판단도 담지 않는 텍스트라 게이트에도 루프에도 속하지 않는다. 커맨드는 자리가 둘이고 그 둘은 다른 것이다: `commands/` 는 소비 리포에 놓으려고 패키지에 싣는 일반형이고, `.claude/commands/` 는 이 리포가 자기를 위해 쓰는 사본이다. 페르소나 수는 질문 수를 따라간다 — 질문이 늘 때만 늘고, 10회 연속 통과한 질문은 내려서 준다 (DESIGN-review.md 3·6·11절).
 
 ## 진입점
 - `npx --no-install almandu-module-gate [--staged|--base <ref>|--fix|--audit|--json]` — module-gate.mjs:657,664,669 (판정 결과를 종료 코드로 낸다)
 - `npx --no-install almandu-module-gate --scope <경로>...` — module-gate.mjs:124 (판정하지 않는다: 그 경로를 고치려면 읽어야 할 계약을 깊은 것부터 낸다)
-- `npm test` — module-gate.test.mjs:16 (게이트의 회귀 테스트 58개, 설치 도구 8개. 같은 명령이 [[loop]] 의 테스트도 함께 돌린다)
+- `npm test` — module-gate.test.mjs:16 (게이트의 회귀 테스트 58개, 설치 도구 14개, 설치 스크립트 18개. 같은 명령이 [[loop]] 의 테스트도 함께 돌린다)
 - `npx --no-install almandu-module-gate --review` — module-gate.mjs:354 (판정하지 않는다: 이 diff 를 리뷰할 때 봐야 할 불변식을 태그별로 낸다)
-- `npx --no-install almandu-harness-init [--dry-run]` — module-harness-init.mjs:66,80,97 (판정하지 않는다: 훅·루트 문단·어댑터를 놓는다)
+- `npx --no-install almandu-harness-init [--dry-run] [--no-commands]` — module-harness-init.mjs:66,80,97,108 (판정하지 않는다: 훅·루트 문단·어댑터·커맨드를 놓는다)
+- `bash almandu-harness-install.sh <대상 리포> [--ref <태그>] [--dry-run] [--override-hooks] [--no-commands] [--yes]` — almandu-harness-install.sh (판정하지 않는다: 대상 리포의 git 최상위에 package.json·.npmrc·.gitignore 를 맞추고 `npm --prefix` 로 설치한 뒤 설치 도구를 부른다. 패키지에 싣지 않아 클론이나 태그의 raw URL 에서 돈다. 종료 코드 0 설치·훅 연결, 1 실패·거부, 2 사용법, 3 설치했지만 pre-commit 이 게이트를 부르지 않는다)
 - 옛 bin 이름 `module-gate`·`module-harness-init`·`module-loop` — 0.7.0 부터 별칭이다. 같은 파일을 가리키고, 소비 리포에 이미 놓인 훅이 옛 이름을 부른다 (package.json bin)
 - `MODULE-schema-v1.md` — 사람과 에이전트가 계약을 쓸 때 읽는 규칙서
 - `review/personas/*.md` — 리뷰 패킷 하나에 답 하나를 내는 질문. 각 파일은 질문·입력 필드·출력 형식·답하지 말 것 네 절이다. 파일은 셋이고 활성은 하나다 — `contract-checker.md` 는 2026-09-16, `scope-watcher.md` 는 2026-09-17 에 내려졌고 파일은 기록으로 남겼다 (DESIGN-review 3절, 활성 목록은 [[loop]] 의 `ALL_PERSONAS`). 0.6.0 부터 패키지에 실린다 — 소비 리포에서는 `node_modules/almandu-harness/review/personas/` 다.
+- `commands/*.md` — 소비 리포의 `.claude/commands/` 에 놓이는 커맨드. 설치 도구가 디렉토리째 복사하고 이름 목록을 자기 안에 두지 않는다 (I7). 셋이다 — `/module-work`(계약→수정→게이트→리뷰→커밋), `/module-review`(패킷과 판정자), `/module-draft`(계약서 초안). 0.8.0 부터 패키지에 실린다 — 소비 리포에서는 `node_modules/almandu-harness/commands/` 다. 이 리포 자신의 `.claude/commands/` 는 소스 경로를 쓰는 별개 사본이다
 
 ## 의존
 ### in (이 모듈이 쓰는 것)
-- 없음. node 표준 라이브러리 세 모듈과 `git` CLI 만 쓴다 — 설치할 의존이 없어 어느 클론에서나 그대로 돈다 (module-gate.mjs:12-14)
+- 없음. node 표준 라이브러리 세 모듈과 `git` CLI 만 쓴다 — 설치할 의존이 없어 어느 클론에서나 그대로 돈다 (module-gate.mjs:12-14). 설치 스크립트는 bash·npm·네트워크를 쓰지만 게이트를 놓기 전에만 돌고 패키지에 실리지 않는다 — 게이트의 의존(I4)이 아니다
 ### out (이 모듈을 쓰는 것)
 - 없음 — 이 패키지를 쓰는 리포가 자기 `in` 에 `(외부: almandu-harness)` 로 적는다. 소비자를 여기 세면 리포가 늘 때마다 거짓이 된다 (R14)
 
@@ -36,6 +38,7 @@ MODULE.md 계약 체계 자체를 소유한다 — 스키마(`MODULE-schema-v1.m
 - I4. 게이트는 외부 의존 없이 돈다 — import 는 node 표준 세 줄이고 나머지는 `git` 서브프로세스다 (근거: module-gate.mjs:12-14, 재현: module-gate.mjs 에서 `from 'node:` 3건) [grep]
 - I6. 어댑터 문구의 출처는 스키마 하나다 — 설치 도구는 `MODULE-schema-v1.md` 의 어댑터 블록을 읽어서 쓰고, 자기 안에 사본을 두지 않는다. 사본이 생기는 순간 "로드되는 자리마다 같은 문장" 을 아무도 검증할 수 없다 (근거: module-harness-init.mjs:28-34, module-harness-init.test.mjs:50) [테스트]
 - I5. 게이트는 자기 판단을 파일에 쓰지 않는다 — 유일한 쓰기는 `--fix` 의 근거 경로 정정이고 그것도 `근거:` 가 있는 줄만 건드린다 (근거: module-gate.mjs:626-630,639) [리뷰]
+- I7. 소비 리포에 놓이는 커맨드 문구의 출처는 패키지의 `commands/` 하나다 — 설치 도구는 그 디렉토리를 읽어 그대로 복사하고 파일 이름 목록도 문구도 자기 안에 두지 않으며, 설치 스크립트는 커맨드를 놓지 않는다. 사본이 생기는 순간 어느 판이 원본인지 아무도 대조할 수 없다 (근거: module-harness-init.mjs:108-120, module-harness-init.test.mjs:121) [테스트]
 
 ## 미결
 - R13 의 비용은 건수가 아니라 범위 폭이다 (2026-09-12 실측: 모듈 디렉토리 범위 25회 0.19s, `restored-project/Assets` 트리 범위 25회 3.2s). 예산을 64 로 올렸지만 통제는 "범위는 경로 하나" 규칙이 맡는다 — 트리 범위 주장이 여럿 생기면 그 규칙을 좁힐지 미결이고, 지금 그런 주장은 gameplay I2 하나다
@@ -43,6 +46,7 @@ MODULE.md 계약 체계 자체를 소유한다 — 스키마(`MODULE-schema-v1.m
 - 게이트가 자기 계약을 판정한다 — 이 계약서를 어기는 게이트 변경을 그 게이트가 잡을 수 있는지는 순환이고, fixture 테스트가 그 순환을 끊는 유일한 수단이다. 자기 판정의 사각지대 목록은 없다
 
 ## 이력
+- 2026-09-20 0.8.0 설치 스크립트와 커맨드 — `almandu-harness-install.sh` 를 리포 루트에 놓고, 소비 리포용 커맨드 셋(`commands/`)을 패키지에 싣는다 (DESIGN.md 7절 설치). 스크립트가 생긴 이유: hwatu-cli 에서 npm 이 부모 디렉토리의 package.json 을 프로젝트 루트로 잡아 대상 리포의 `.npmrc` 를 읽지 않았고(EALLOWGIT), 그 실패는 패키지가 설치되기 전에 일어나 init 이 막을 수 없다 — 그래서 bin 이 아니라 패키지 밖의 스크립트다. git 최상위에 package.json 을 만들고 `npm --prefix` 로 걷기를 끊은 뒤 설치 자리와 부모가 그대로인지 확인한다. 훅은 이미 있는 core.hooksPath(로컬·전역)도, `.git/hooks` 에서 돌고 있는 훅도 기본으로 바꾸거나 가리지 않는다 — init 이 로컬 값을 덮어쓰고, hooksPath 를 켜면 git 이 `.git/hooks` 를 통째로 무시하고, 이미 있는 pre-commit 을 건너뛰므로, 게이트가 연결되지 않으면 종료 코드 3 과 덧붙일 한 줄을 낸다. 훅 충돌을 init 이 판단하게 만드는 것은 여전히 다음 변경이다 (DESIGN.md 10절). 커맨드를 실은 이유: 설치가 끝난 리포에서 곧바로 `/module-work` 로 작업을 시작할 수 있어야 한다는 요청이다. 0.6.0 은 "커맨드는 경로가 리포마다 달라 소비 리포가 사본을 둔다" 며 싣지 않았는데, 그 전제가 틀렸다 — 리포마다 다른 것은 소스를 체크아웃해 둔 이 리포뿐이고 소비 리포의 경로는 전부 `node_modules/almandu-harness/…` 로 같다. 놓는 것은 스크립트가 아니라 init 이다: 놓는 주체가 둘이 되면 안 되고(이 리포가 훅 본문에 대해 이미 내린 판단), init 이 놓으면 `npm i` 만 하는 업그레이드에서도 새 커맨드가 들어온다. 그 문구의 출처를 하나로 못 박은 것이 새 불변식 I7 이고, 이미 있는 파일은 덮어쓰지 않으므로 소비 리포가 고쳐 둔 커맨드는 안전하다. init 의 새 코드는 3단계 **뒤에** 붙였다 — 위쪽에 줄을 더하면 이 계약서가 인용한 `:28-34`·`:66`·`:80`·`:97` 이 전부 밀린다. 위쪽에서 고친 것은 사용법 주석(`:3`·`:5-6`)뿐이고 줄 수가 같은 제자리 수정이라 밀림이 0 이다: R11(b) 가 보는 것은 수정이 아니라 밀림이다. **"설치하면 바로 작업" 은 대상에 커밋이 하나는 있을 때다** — `/module-work` 의 1단계가 HEAD 를 읽는데 루프에도 게이트에도 가드가 없다. 설치와 첫 커밋은 커밋 0 개에서도 서므로 거부하지 않고, 스크립트가 감지해 첫 커밋을 다음 블록의 0 번으로 낸다 (진짜 고침은 DESIGN.md 10절). 이 리포의 `.claude/commands/module-review.md` 와 실리는 `commands/module-review.md` 는 경로 둘 말고는 같아야 하고, 한쪽만 고치면 새 테스트가 운다 — 루프는 내려진 페르소나만 막고 새로 는 페르소나가 배포판에서 빠지는 것은 조용하기 때문이다. 실리는 판에는 "원본은 …" 머리 줄을 두지 않았다: 그 줄이 있으면 두 사본이 경로 치환만으로 같아질 수 없어 그 테스트가 설 수 없다. `files` 에 `commands/` 가 늘어 minor 이고(7절 버전 표), 그래서 기본 ref 도 v0.8.0 이라 태그를 밀기 전까지 `--ref` 기본 경로는 서지 않는다 — `--dry-run` 도 함께 선다. 태그 확인은 예행연습도 거치기 때문이다: 그 확인을 예행연습만 건너뛰면 쓰기 전에 죽는 실패를 예언하지 못해 예행연습이 거짓 초록불을 내고, README 와 설계가 적은 "`git ls-remote` 만 네트워크를 본다" 도 거짓이 된다. 게이트·스키마는 고치지 않았으므로 I1~I5 는 그대로이고, I6 이 인용한 `adapterText()` 도 그대로다. 테스트 스물넷을 더했다 (설치 도구 6, 설치 스크립트 18)
 - 2026-09-18 0.7.0 — 패키지 이름을 `module-harness` 에서 `almandu-harness` 로 바꾼다. bin 은 새 이름(`almandu-module-gate`·`almandu-harness-init`·`almandu-module-loop`)을 내고 옛 이름 셋을 같은 파일을 가리키는 별칭으로 남겼다 — 소비 리포에 이미 놓인 훅이 `npx --no-install module-gate` 를 부르고, 설치 도구는 있는 훅을 덮어쓰지 않는다. 파일 이름·게이트 출력 접두사(`module-gate:`)·상태 디렉토리(`.git/module-loop/`)는 그대로다: 파일 이름을 바꾸면 근거 인용이 전부 옮겨 가는데 이력은 옛 이름을 들고 있고, 상태 디렉토리를 옮기면 소비 리포의 `keep-verdict.mjs` 가 결과 파일을 못 찾아 조용히 통과한다. 설치 도구가 쓰는 훅과 루트 문단은 새 이름을 부른다. 패키지 이름은 별칭을 둘 수 없어 소비 리포의 `node_modules/module-harness/…` 경로와 R14 표지 `(외부: module-harness)` 는 그쪽에서 설치 목록과 한 커밋으로 옮겨야 한다 — 따로 움직이면 R14 가 운다 (README 이름 변경 절). 0.x 동안 호환성 파괴는 minor 로 쓴다 (DESIGN.md 7절). 스키마는 R14 예시와 bin 이름만 바꿨고 어댑터 블록은 건드리지 않았다(I6). 게이트는 한 줄도 고치지 않았으므로 I1~I6 은 그대로다. 옛 이력·observations 의 `module-harness` 는 고치지 않는다 — 당시의 이름이 기록이다. 소비 리포에 안내하는 `npx` 호출에는 `--no-install` 을 붙였다 — 새 이름은 npm 에 아직 아무도 올리지 않아, 로컬 설치가 없는 머신에서 맨 `npx` 는 레지스트리로 넘어가 남이 선점한 패키지를 받아 실행할 수 있다. 테스트 하나를 더했다 (설치 8)
 - 2026-09-18 0.6.0 — 루프(`loop/loop.mjs`, bin `module-loop`)와 페르소나(`review/`)를 `files` 에 싣는다. 소비 리포(kod-remastered)가 `file:` 심링크를 떠나 태그로 설치하면 심링크로 닿던 루프·페르소나가 사라지기 때문이다 (DESIGN.md 2절 운영). 한 태그가 게이트·루프·페르소나를 함께 고정하는 쪽을 골랐고, 대가는 루프 CLI 가 공개 표면이 된 것이다 — 그 결정과 버전 규칙은 DESIGN.md 7·10절에 있다. minor 인 이유는 표면이 늘었을 뿐 이미 통과하던 계약서를 FAIL 시키지 않기 때문이다. `loop/` 의 테스트·계약서·어댑터와 리뷰 커맨드는 싣지 않았다 — 어댑터가 실리면 소비 리포에서 루프를 Read 할 때 이 리포의 계약이 섞이고, 커맨드는 경로가 리포마다 달라 소비 리포가 사본을 둔다. 게이트·스키마·설치 도구는 고치지 않았으므로 I1~I6 은 그대로다
 - 2026-09-17 0.5.0 — 5e 동안 얼려 둔 루프 결함 셋(observations/05 결함 메모 6·1·7)을 고친 버전을 찍는다. 고친 곳은 전부 [[loop]] 이고 무엇을 왜 그렇게 골랐는지는 그 이력에 있다: 커밋 시점에 패킷을 다시 만들어 리뷰한 트리와 대조하고(`diff.content`), 통과가 아닌 답을 `Review-Verdict:` 트레일러로 남기고, `scope` 가 트리에 없는 경로를 거부한다. minor 인 이유는 패킷 필드·트레일러 줄·거부가 하나씩 늘었을 뿐 이미 통과하던 계약서를 FAIL 시키지 않기 때문이다 (DESIGN.md 7절). 게이트·스키마·설치 도구는 고치지 않았으므로 I1~I6 은 그대로다. 패킷 스키마와 트레일러 형식은 DESIGN-review 2·4·5절에 함께 적었고 13절 미결 한 줄이 닫혔다

@@ -267,6 +267,8 @@ FAIL 이 된다. 7절 버전 표의 첫 줄이 정확히 그것을 major 라고 
 
 0.6.0 부터 루프 CLI 도 이 표의 대상이다 — 명령·플래그를 빼거나 뜻을 바꾸는 것, 종료 코드(0/1/2)의 뜻을 바꾸는 것, `Review:`·`Review-Verdict:` 트레일러의 형식을 바꾸는 것은 첫 줄과 같은 급이다. 소비 리포의 커맨드와 이미 커밋된 트레일러를 읽는 쪽이 깨진다. 패킷(`review-packet.json`)의 모양은 여기 들지 않는다 — 읽는 쪽인 페르소나가 같은 태그에 실려 함께 움직인다.
 
+2026-09-20 — 0.8.0 에서 `files` 에 `commands/` 가 늘고 설치 도구에 `--no-commands` 가 는다. 표의 넷째 줄이고, 이미 통과하던 계약서를 FAIL 시키지 않으므로 첫 줄은 아니다. 설치 스크립트의 CLI 는 이 표의 대상이 아니다 — 패키지에 실리지 않는다. **딸려 오는 결과 하나: 기본 ref 가 버전을 따라간다.** 스크립트 안의 `DEFAULT_REF` 가 `v<package.json 버전>` 과 같은지를 테스트가 고정하므로, 버전을 올리면 그 태그를 밀기 전까지 `--ref` 기본 경로는 `ls-remote` 에서 exit 1 이다. 커밋에서는 `--spec file:<tgz>` 로 증명하고 태그를 민 뒤 `--ref` 로 한 번 더 돌린다.
+
 2026-09-18 — 0.7.0 에서 패키지 이름이 `module-harness` 에서 `almandu-harness` 로 바뀐다. 소비 리포의 설치 자리(`node_modules/module-harness/…`)가 깨지고 이미 통과하던 `(외부: module-harness)` 표지가 R14 FAIL 이 되므로 첫 줄과 같은 급이다 — 0.x 라 minor 로 쓴다. bin 은 `almandu-module-gate`·`almandu-harness-init`·`almandu-module-loop` 가 정식이고 옛 이름 셋은 같은 파일을 가리키는 별칭이다. 별칭을 나중에 빼는 것도 첫 줄과 같은 급이다 — 이미 놓인 훅이 옛 이름을 부른다 (뺄 조건은 10절 미결).
 
 ### 배포
@@ -294,9 +296,10 @@ npm i -D github:shanash/almandu-harness#v0.7.0
 `.github/workflows/ci.yml` 이 이 셋을 돌린다 (2026-09-12):
 
 ```
-npm test                                      # 108개
+npm test                                      # 132개
 node module-gate.mjs --base origin/<base>     # PR 이 계약을 어기는지 (push 는 --base HEAD~1)
 node module-gate.mjs --audit                  # 전수 — nightly(03:00 KST)와 수동 실행만
+shellcheck almandu-harness-install.sh         # PR·push
 ```
 
 `--audit` 를 매 PR 에 걸지 않는 이유는 diff 와 무관하게 전부를 여는 모드라서다. 처음
@@ -317,6 +320,10 @@ PR 을 막을 근거가 아니라 따로 쌓아 두고 볼 목록이다.
 지키는 약속이 된다. 대신 `MODULE-schema-v1.md` 의 어댑터 블록을 읽어서 쓴다 — harness I6 이고,
 설치 도구가 스키마를 읽는 유일한 이유다. 이미 있는 파일은 덮어쓰지 않고, 이미 있는 CLAUDE.md
 에는 어댑터를 맨 앞에 얹는다(`@import` 는 위에 있어야 읽힌다). 두 번 돌려도 같은 상태다.
+
+2026-09-20 — 설치 스크립트 `almandu-harness-install.sh` 를 놓고, 소비 리포용 커맨드 셋을 `commands/` 로 싣는다. 손으로 하던 설치의 실패는 init 보다 앞에서 난다: hwatu-cli 에서 npm 이 부모 디렉토리의 package.json 을 루트로 잡아 대상의 `.npmrc` 를 읽지 않았다. 스크립트는 git 최상위에 package.json·`.npmrc`·`.gitignore` 를 맞추고 `npm --prefix` 로 설치한 뒤 설치 자리를 확인하고 init 을 부른다. 스크립트는 패키지에 싣지 않는다 — 설치 전에 돌아야 하므로 bin 으로는 쓸모가 없다. 훅은 이미 있는 core.hooksPath 도, `.git/hooks` 에서 돌고 있는 훅도 기본으로 바꾸거나 가리지 않고, 게이트가 연결되지 않으면 종료 코드 3 으로 알린다.
+
+설치의 끝을 "게이트가 걸렸다" 가 아니라 **"작업을 시작할 수 있다"** 로 옮겼다. init 이 훅·루트 문단·어댑터에 이어 `.claude/commands/` 에 커맨드 셋(`/module-work`·`/module-review`·`/module-draft`)을 놓고, 리포트가 `/module-draft` → `/module-work` 순서를 낸다. **그 끝은 조건부다 — 대상에 커밋이 하나는 있어야 한다.** `/module-work` 의 1단계인 `loop scope` 가 기준선을 재려고 HEAD 를 읽기 때문이다. 설치 자체는 커밋 0 개에서도 서고(게이트의 `--staged` 는 HEAD 를 안 본다) 첫 커밋도 통과하므로, 스크립트는 거부하지 않고 감지해서 첫 커밋을 다음 블록의 0 번으로 낸다. 진짜 고침(루프의 HEAD 가드)은 10절 미결이다. 놓는 주체를 스크립트가 아니라 init 으로 한 이유는 둘이다 — 파일을 놓는 저자가 둘이 되면 안 되고(훅 본문을 스크립트가 쓰지 않기로 한 것과 같은 판단), init 이 놓으면 `npm i && init` 만 하는 업그레이드에서도 새 커맨드가 들어온다. 문구의 출처는 패키지의 `commands/` 하나이고 그것이 harness I7 이다. 0.6.0 이 "경로가 리포마다 달라 싣지 않는다" 고 적은 전제는 틀렸다: 경로가 다른 것은 소스를 체크아웃해 둔 하네스 리포 자신뿐이고, 소비 리포는 전부 `node_modules/almandu-harness/…` 로 같다.
 
 ---
 
@@ -353,6 +360,10 @@ almandu 에서 가져오지 않는 것을 명시한다. 나중에 "왜 안 가�
 
 ## 10. 미결
 
+- init 의 훅 충돌 처리 — 전역 core.hooksPath 를 로컬 `.githooks` 로 가리고, `.git/hooks` 에서 돌던 훅(pre-commit 프레임워크·husky v4·lefthook 등)을 hooksPath 로 말없이 끄고, 로컬 hooksPath(husky 등)를 말없이 바꾸고, 이미 있는 pre-commit 을 건너뛰어 게이트가 연결되지 않은 채 끝난다. 설치 스크립트가 감지해 종료 코드 3 으로 알리지만 고치는 자리는 init 이다 (체인 훅, `--dry-run` 이 config 변경도 보고). 근거 줄이 옮겨 가므로(R11(b)) 따로 한다 — 0.8.0 의 커맨드 배치는 3단계 뒤에만 붙어 그 줄들을 피했지만, 훅 처리는 `put()` 위쪽의 결정 로직이라 피할 수 없다
+- 커맨드를 놓는 자리가 `.claude/commands/` 하나다 (2026-09-20). Codex 를 쓰는 소비 리포는 `.agents/` 를 읽으므로 같은 커맨드가 닿지 않는다. 이 리포가 자기 `.agents/`·`AGENTS.md` 를 "도구가 만드는 사본" 으로 무시 목록에 넣은 것(0.4.0 이력)과 같은 이유로 지금은 미러를 만들지 않는다 — 사본이 생기면 어느 쪽이 원본인지 아무도 못 센다. 두 번째 러너를 쓰는 소비 리포가 생기면 그때 결정한다
+- `GUIDE.md`(소비 리포 작업 가이드)를 실을지 (2026-09-20). 커맨드가 절차를 들고 있으므로 없어도 `/module-work` 는 선다. 아직 커밋도 안 된 파일이라 0.8.0 에 넣지 않았다 — 커밋하고 한 판본을 살아 본 뒤 `files` 에 넣을지 본다
+- 커밋이 하나도 없는 리포의 `loop scope` (2026-09-20). **이 줄을 닫는 날 `almandu-harness-install.test.mjs` 의 test 17 C 가 먼저 운다** — 그 arm 이 경고뿐 아니라 "커밋 없으면 `loop scope` 가 0 이 아닌 코드로 끝난다" 는 전제까지 고정해 두었다. 그때 설치 스크립트의 phase 1 경고와 phase 8 의 0 번을 함께 지운다. 루프는 게이트의 `--scope` 답을 받은 뒤 기준선을 재려고 모드 없는 게이트를 한 번 더 부르고(`loop/loop.mjs:317`), 그쪽은 `--scope` 의 조기 반환을 지나 `git diff --name-only HEAD` 에 닿아 HEAD 가 없으면 던진다(`module-gate.mjs:155`). 루프에도 게이트에도 `rev-parse --verify HEAD` 도, 빈 트리 sentinel 도, try/catch 도 없다 — 사용자가 보는 것은 날것의 Node 스택 트레이스와 `loop: 게이트 출력을 읽지 못했다` 다. 0.8.0 의 설치 스크립트는 감지해서 "첫 커밋을 먼저" 라고 말할 뿐이다. 고치는 자리는 루프이고, 손대면 `loop/MODULE.md` 의 진입점 인용(`loop/loop.mjs:299` 등)이 밀리므로(R11(b)) 훅 충돌과 같은 이유로 따로 한다
 - ~~`--scope` 가 조상 계약을 내는가 (4절)~~ — 낸다. 4b 를 다섯 번 돌려 보니 체인이 1~2장이라
   "루트 계약이 매번 실린다" 는 비용이 걱정한 만큼 크지 않았고, 조상을 알아야 `commit` 이
   "계약을 안 연 경로" 를 판정할 수 있다. 부르는 쪽이 앞에서 자를 수 있다는 여지는 그대로 둔다

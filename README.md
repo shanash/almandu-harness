@@ -8,26 +8,62 @@
 - MODULE-schema-v1.md — 계약 스키마. 계약을 쓸 때 읽는 규칙서
 - module-gate.mjs — 게이트 (R0~R14)
 - module-gate.test.mjs — 게이트 자신의 회귀 테스트. 어느 리포의 계약서도 입력으로 쓰지 않는다
-- module-harness-init.mjs — 소비 리포에 훅·계약 문단·어댑터를 놓는 설치 도구
+- module-harness-init.mjs — 소비 리포에 훅·계약 문단·어댑터·커맨드를 놓는 설치 도구
+- almandu-harness-install.sh — 대상 리포에 패키지를 설치하고 init 까지 한 번에 돌리는 스크립트 (패키지에 싣지 않는다)
 - loop/ — 변경을 계약 앞에 세우는 루프 (0.6.0 부터 `loop.mjs` 가 bin `almandu-module-loop` 으로 패키지에 실린다)
 - review/personas/ — 리뷰 패킷 하나에 답 하나를 내는 질문 프롬프트 (패키지에 실린다)
+- commands/ — 소비 리포의 `.claude/commands/` 에 놓이는 커맨드 셋 (0.8.0 부터 패키지에 실린다)
 - observations/ — 게이트를 실제로 돌려 보고 남긴 관찰. 규칙이 왜 생겼는지의 출처다
 
 ## 설치
 
 ```
 npm i -D almandu-harness           # 레지스트리에 올린 뒤
-npm i -D github:shanash/almandu-harness#<tag>   # 비공개 리포 — 설치하는 머신에 GitHub SSH 키가 있어야 한다
+npm i -D github:shanash/almandu-harness#<tag>   # 공개 리포 — 태그는 ruleset 으로 고정된다
 npm i -D file:../module-harness    # 로컬 개발
 ```
 
 npm 12 부터 git 의존은 기본으로 막힌다 — 태그로 설치하는 소비 리포는 `.npmrc` 에 `allow-git=root` 를 둔다.
 
+### 설치 스크립트
+
+위의 손 설치 대신 스크립트 하나로 끝낼 수 있다.
+
+```
+bash almandu-harness-install.sh <대상 리포>                       # 클론에서
+curl -fsSL https://raw.githubusercontent.com/shanash/almandu-harness/<태그>/almandu-harness-install.sh \
+  | bash -s -- <대상 리포>                                        # 이 스크립트가 든 첫 태그부터
+```
+
+이것이 필요한 이유는 `npm i` 가 이미 늦기 때문이다 — 대상 리포 위의 디렉토리에 `package.json` 이나
+`node_modules/` 가 있으면 npm 이 그쪽을 프로젝트 루트로 잡고 대상의 `.npmrc` 를 읽지 않는다(EALLOWGIT).
+그 실패는 패키지가 설치되기 전에 나므로 패키지 안의 무엇도 막을 수 없다. 스크립트는 git 최상위에
+`package.json`·`.npmrc`·`.gitignore` 를 맞추고 `npm --prefix` 로 그 걷기를 끊은 뒤, 설치 자리와 부모가
+그대로인지 확인하고 init 을 부른다.
+
+훅은 말없이 바꾸지 않는다. 이미 있는 `core.hooksPath`(로컬·전역)도, `.git/hooks` 에서 돌고 있는 훅도
+기본으로는 덮거나 가리지 않고, `--override-hooks` 를 줄 때만 바꾼다. 게이트가 연결되지 않으면 설치는
+그대로 끝내고 종료 코드 3 과 **덧붙일 한 줄**을 낸다 — 이 머신의 다른 리포에서 도는 전역 훅은 절대 고치라고 하지 않는다.
+
+| 코드 | 뜻 |
+|---|---|
+| 0 | 설치됐고 pre-commit 이 게이트를 부른다 |
+| 1 | 실패·거부 (도구 없음, git 아님, pnpm/yarn/bun, allow-git 충돌, npm 실패, 설치 자리 확인 실패) |
+| 2 | 사용법 (모르는 옵션, `<대상>` 없음, `--ref` 와 `--spec` 동시, v0.7.0 미만 태그, 절대 `--hooks-path`) |
+| 3 | 설치는 됐지만 pre-commit 이 게이트를 부르지 않는다 |
+
+`--dry-run` 은 아무것도 쓰지 않는다 — 대상과 그 조상에 파일도 `git config` 도 `node_modules` 도 건드리지 않고
+계획과 예상 종료 코드만 낸다 (`git ls-remote` 만 네트워크를 본다).
+
+설치가 끝나면 `.claude/commands/` 에 `/module-work`·`/module-review`·`/module-draft` 셋이 놓이므로
+`/module-draft <디렉토리>` → `/module-work "<할 일>"` 로 바로 시작한다.
+**대상 리포에 커밋이 하나는 있어야 한다 — `/module-work` 의 1단계가 HEAD 를 읽는다. 갓 `git init` 한
+리포라면 먼저 한 번 커밋해라 (스크립트가 그 경우 첫 커밋을 다음 블록의 0 번으로 낸다).**
+커맨드가 필요 없으면 `--no-commands` 를 준다. 이미 있는 파일은 덮어쓰지 않으므로 고쳐 둔 커맨드는 안전하다.
+
 설치한 리포는 계약서에서 이 패키지를 `in [[harness]] … (외부: almandu-harness)` 로 인용한다 (R14).
 게이트는 `node_modules/` 를 걷지 않으므로 이 패키지의 계약서는 소비 리포의 판정 대상이 아니다 —
 그쪽 계약은 이 리포에서 판정된다.
-
-리포는 비공개다 — 설치하는 머신마다 GitHub SSH 키(또는 토큰)가 있어야 한다.
 
 설치한 뒤 한 번 돌린다:
 
@@ -36,8 +72,8 @@ npx --no-install almandu-harness-init --dry-run   # 무엇을 놓을지 먼저 �
 npx --no-install almandu-harness-init
 ```
 
-셋을 놓는다 — `.githooks/pre-commit`(+ `core.hooksPath`), 루트 CLAUDE.md 의 계약 문단,
-MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리의 어댑터. 이미 있는 파일은 덮어쓰지 않고,
+넷을 놓는다 — `.githooks/pre-commit`(+ `core.hooksPath`), 루트 CLAUDE.md 의 계약 문단,
+MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리의 어댑터, `.claude/commands/` 의 커맨드 셋(`--no-commands` 로 끈다). 이미 있는 파일은 덮어쓰지 않고,
 이미 있는 CLAUDE.md 에는 어댑터를 맨 앞에 얹는다. 두 번 돌려도 같은 상태다.
 
 어댑터 문구는 `MODULE-schema-v1.md` 에서 읽어 쓴다 — 설치 도구 안에 사본을 두지 않는다.
@@ -54,7 +90,7 @@ npx --no-install almandu-module-gate --audit             # diff 무관: 인용 �
 npx --no-install almandu-module-gate --json              # 같은 판정을 기계 판독 형태로 (stdout 전용)
 npx --no-install almandu-module-gate --scope <경로>...   # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
 npx --no-install almandu-module-gate --review            # 판정 안 함: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그
-npm test                                                 # 회귀 테스트 85개, ~75초
+npm test                                                 # 회귀 테스트 132개, ~85초
 ```
 
 `--no-install` 은 뺄 수 없다 — `almandu-*` 이름은 npm 에 올라가 있지 않아서, 로컬 설치가 없는 머신에서 맨 `npx` 는
@@ -106,7 +142,7 @@ R1 이 코드와 계약을 한 커밋에 묶기 때문이다: 쪼갤 수 없으�
 스스로 통과를 선언할 자리는 없다. 기준선은 `.git/module-loop/` 안에서만 살고 HEAD 와 게이트 소스
 해시로 봉인되어, 둘 중 하나라도 움직이면 세션을 거부한다.
 
-소비 리포에서는 `npx --no-install almandu-module-loop <명령>` 으로 같은 CLI 를 부른다 (0.6.0 부터, 0.7.0 부터 이 이름). 명령·플래그·종료 코드·트레일러 형식은 공개 표면이라 DESIGN.md 7절 버전 표를 따른다. 페르소나는 `node_modules/almandu-harness/review/personas/` 에 실린다. 리뷰 커맨드(`.claude/commands/module-review.md`)는 경로가 리포마다 달라 싣지 않는다 — 소비 리포가 사본을 두고 그 출처 줄이 이 리포와 태그를 가리킨다.
+소비 리포에서는 `npx --no-install almandu-module-loop <명령>` 으로 같은 CLI 를 부른다 (0.6.0 부터, 0.7.0 부터 이 이름). 명령·플래그·종료 코드·트레일러 형식은 공개 표면이라 DESIGN.md 7절 버전 표를 따른다. 페르소나는 `node_modules/almandu-harness/review/personas/` 에 실린다. 커맨드는 0.8.0 부터 `commands/` 로 함께 실리고 설치 도구가 `.claude/commands/` 에 놓는다 — 0.6.0 의 "경로가 리포마다 달라 싣지 않는다" 는 전제가 틀렸다. 경로가 다른 것은 소스를 체크아웃해 둔 이 리포뿐이고, 소비 리포는 전부 `node_modules/almandu-harness/…` 로 같다.
 
 ## 이름 변경 (0.7.0)
 

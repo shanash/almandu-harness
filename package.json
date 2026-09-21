@@ -1,6 +1,6 @@
 {
   "name": "almandu-harness",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "MODULE.md 계약 게이트 — 디렉토리별 계약을 커밋 시점에 판정한다",
   "bin": {
     "almandu-module-gate": "module-gate.mjs",
@@ -11,7 +11,7 @@
     "module-loop": "loop/loop.mjs"
   },
   "scripts": {
-    "test": "node --test module-gate.test.mjs module-harness-init.test.mjs loop/loop.test.mjs"
+    "test": "node --test module-gate.test.mjs module-harness-init.test.mjs loop/loop.test.mjs almandu-harness-install.test.mjs"
   },
   "files": [
     "module-gate.mjs",
@@ -19,7 +19,8 @@
     "MODULE-schema-v1.md",
     "README.md",
     "loop/loop.mjs",
-    "review/"
+    "review/",
+    "commands/"
   ],
   "engines": {
     "node": ">=18"

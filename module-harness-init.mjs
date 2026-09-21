@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // module-harness-init.mjs — 소비 리포에 하네스(almandu-harness)를 설치한다 (DESIGN.md 7절)
-// 사용: npx --no-install almandu-harness-init [--dry-run] [--hooks-path <디렉토리>] [--no-config]  (옛 이름 module-harness-init 은 별칭)
+// 사용: npx --no-install almandu-harness-init [--dry-run] [--hooks-path <디렉토리>] [--no-config] [--no-commands]  (옛 이름은 별칭)
 //
-// 손으로 하던 셋을 대신한다: pre-commit 훅 작성, 루트 CLAUDE.md 에 계약 문단 추가,
-// MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리에 어댑터 생성.
+// 손으로 하던 넷을 대신한다: pre-commit 훅 작성, 루트 CLAUDE.md 에 계약 문단 추가,
+// MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리에 어댑터 생성, .claude/commands/ 에 커맨드 셋 복사.
 // 게이트 바이너리에 넣지 않은 이유는 판정 도구가 파일을 쓰게 되면 harness I5 가 흐려지기 때문이다.
 // 이쪽은 처음부터 쓰는 도구이므로 판정을 하지 않는다 — 종료 코드는 쓰기 성공 여부뿐이다.
 import { execFileSync } from 'node:child_process';
@@ -103,6 +103,20 @@ for (const dir of findModules(root)) {
   // 있는 CLAUDE.md 는 지우지 않는다. 어댑터를 맨 앞에 얹는다 — @import 는 위에 있어야 읽힌다
   if (!dryRun) writeFileSync(full, `${adapter}\n${text}`);
   done.push(`${rel} — 어댑터를 앞에 얹음`);
+}
+
+// ---------- 4. 소비 리포의 커맨드 ----------
+// 문구의 출처는 패키지의 commands/ 하나다 (I7). 파일 이름 목록을 여기 두지 않는다 —
+// 디렉토리를 읽으므로 커맨드가 넷째로 늘어도 이 파일은 그대로다.
+// 플래그를 여기서 읽는 이유: 위쪽 상수 줄을 밀면 계약서의 인용 넷이 거짓이 된다 (R11(b))
+if (!args.includes('--no-commands')) {
+  const cmdDir = join(HERE, 'commands');
+  // 0.8.0 이전 태그로 설치한 리포에는 이 디렉토리가 없다. 설치가 실패한 것은 아니므로 죽지 않는다
+  if (!existsSync(cmdDir)) skipped.push('.claude/commands — 패키지에 commands/ 가 없다 (0.8.0 미만)');
+  else for (const name of readdirSync(cmdDir)) {
+    if (!name.endsWith('.md')) continue;
+    put(`.claude/commands/${name}`, readFileSync(join(cmdDir, name), 'utf8'));
+  }
 }
 
 // ---------- 결과 ----------
