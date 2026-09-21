@@ -3,6 +3,7 @@ node_modules/
 # 도구가 만드는 사본 — 커맨드·어댑터의 원본은 .claude/ 와 CLAUDE.md 다
 .agents/
 AGENTS.md
+.claude/agent-memory/
 
 # AlMandu 작업 산출물 — 계약이 아니라 작업 로그라 커밋하지 않는다
 .am/
