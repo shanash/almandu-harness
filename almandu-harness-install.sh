@@ -11,9 +11,11 @@
 # readlink -f·realpath·sed -i·grep -P·stat 을 쓰지 않는다. 대신 case·(cd && pwd -P)·cksum·awk 를 쓴다.
 #
 # 쓰는 함수의 절반은 act() 가 이름으로 받아 부른다. shellcheck 는 그 간접 호출을 못 따라가
-# "never invoked" 로 읽으므로(0.11.0 기준 7건) 파일 단위로 끈다. 대가는 진짜 죽은 함수도
-# 같이 안 잡히는 것이고, 그 탐지는 act 를 쓰는 한 애초에 서지 않는다.
-# shellcheck disable=SC2329
+# "never invoked" 로 읽으므로 파일 단위로 끈다. 대가는 진짜 죽은 함수도 같이 안 잡히는 것이고,
+# 그 탐지는 act 를 쓰는 한 애초에 서지 않는다.
+# 코드가 판본마다 갈린다 — 0.11.0 은 함수 머리에 SC2329 를 7건, 0.10.0 이하는 본문 줄마다
+# SC2317 을 35건 낸다 (2026-09-21 실측). 둘 다 끄지 않으면 로컬 초록이 CI 초록을 뜻하지 않는다.
+# shellcheck disable=SC2329,SC2317
 set -eu
 set -o pipefail
 unset CDPATH
