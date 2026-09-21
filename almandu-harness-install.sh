@@ -19,6 +19,25 @@ set -o pipefail
 unset CDPATH
 export GIT_TERMINAL_PROMPT=0
 
+# 이미 붙은 연결이 멈추면 무한히 기다리지 않는다 — 60초 동안 사실상 한 바이트도 움직이지 않으면 끊는다.
+# 1 바이트/초는 대역폭 제한이 아니라 정지 감지이므로 느린 회선을 자르지 않는다.
+# **커버하지 않는 것**: 연결이 맺어지지 않는 경우(SYN 이 조용히 드롭되는 방화벽 등). lowSpeed 는 전송이
+# 시작된 뒤에만 재고 git 은 connect 타임아웃을 노출하지 않아, 그 경우는 OS 기본값에 맡겨진다 — 끝나기는
+# 하지만 리눅스에서 2분을 넘기기도 한다. 막는 것은 상대가 연결을 받아 놓고 아무것도 보내지 않는 경우다.
+# 환경변수로 내보내는 이유는 우리 ls-remote 말고 npm 이 git 의존을 받으려고 부르는 git 서브프로세스에도
+# 닿아야 하기 때문이다 — npm 의 --fetch-timeout 은 레지스트리 HTTP 만 보고 그 git 은 보지 않는다.
+# 그 상속은 일반론이 아니라 테스트 19(C)가 고정한다.
+# 대가 둘: git 2.31 미만은 이 변수를 무시해 지금까지와 같은 동작이고, 부르는 쪽이 이미 GIT_CONFIG_COUNT 로
+# 자기 설정을 주입하고 있으면 그쪽을 건드리지 않으려고 이 가드를 통째로 건너뛴다(아래에서 알린다).
+STALL_GUARD=1
+if [ -z "${GIT_CONFIG_COUNT:-}" ]; then
+  export GIT_CONFIG_COUNT=2
+  export GIT_CONFIG_KEY_0=http.lowSpeedLimit GIT_CONFIG_VALUE_0=1
+  export GIT_CONFIG_KEY_1=http.lowSpeedTime GIT_CONFIG_VALUE_1=60
+else
+  STALL_GUARD=0
+fi
+
 DEFAULT_REF="v0.8.0"
 REPO_URL="https://github.com/shanash/almandu-harness"
 GH_BASE="github:shanash/almandu-harness"
@@ -129,6 +148,10 @@ done
 
 [ -n "$TARGET" ] || uerr "<대상> 이 필요하다 (--help 참고)"
 if [ -n "$REF" ] && [ -n "$SPEC" ]; then uerr "--ref 와 --spec 은 함께 쓸 수 없다"; fi
+
+# 사용법 뒤에 둔다 — --help 가 이 줄을 먼저 뱉으면 안 된다. 가드가 꺼진 것을 말하지 않으면
+# 멈춘 연결에 매달리는 이유를 아무도 못 찾는다
+[ "$STALL_GUARD" = 1 ] || warn "부르는 쪽이 GIT_CONFIG_COUNT 를 이미 쓰고 있다 — 네트워크 정지 가드를 건너뛴다"
 
 if [ -n "$HP" ]; then
   case "$HP" in

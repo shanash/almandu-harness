@@ -55,6 +55,16 @@ curl -fsSL https://raw.githubusercontent.com/shanash/almandu-harness/<태그>/al
 `--dry-run` 은 아무것도 쓰지 않는다 — 대상과 그 조상에 파일도 `git config` 도 `node_modules` 도 건드리지 않고
 계획과 예상 종료 코드만 낸다 (`git ls-remote` 만 네트워크를 본다).
 
+**이미 붙은 연결이 멈추면** 무한히 기다리지 않는다. `http.lowSpeedLimit=1`·`http.lowSpeedTime=60` 을
+환경변수로 내보내므로, 60초 동안 사실상 한 바이트도 움직이지 않으면 git 이 끊고 스크립트는 종료 코드 1 로
+끝난다. 이 값은 대역폭 제한이 아니라 정지 감지라 느린 회선을 자르지 않는다. `npm install` 이 git 의존을
+받으려고 부르는 git 에도 같이 닿는다 — npm 의 `--fetch-timeout` 은 레지스트리 HTTP 만 보기 때문이다.
+
+가드 밖에 있는 것 둘. **연결이 맺어지지 않는 경우**(SYN 이 조용히 드롭되는 방화벽 등)는 전송이 시작된 적이
+없어 이 값들이 재지 못하고 OS 의 connect 타임아웃에 맡겨진다 — 끝나기는 하지만 리눅스에서 2분을 넘기기도
+한다. 그리고 git 2.31 미만은 이 환경변수를 무시한다. 부르는 쪽이 `GIT_CONFIG_COUNT` 를 이미 쓰고 있으면
+그쪽 설정을 덮지 않으려고 가드를 통째로 건너뛰고, 그때는 그렇다고 한 줄 낸다.
+
 설치가 끝나면 `.claude/commands/` 에 `/module-work`·`/module-review`·`/module-draft` 셋이 놓이므로
 `/module-draft <디렉토리>` → `/module-work "<할 일>"` 로 바로 시작한다.
 **대상 리포에 커밋이 하나는 있어야 한다 — `/module-work` 의 1단계가 HEAD 를 읽는다. 갓 `git init` 한

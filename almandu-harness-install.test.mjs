@@ -527,3 +527,69 @@ test('--dry-run 도 태그 존재를 확인한다', { skip: SKIP }, (t) => {
   assert.match(g2.out, /DRY \+/);
   assert.equal(g2.out.includes('태그를 찾지 못했다'), false, g2.out);
 });
+
+// ---------- 19 ----------
+test('정지 가드는 우리 git 과 npm 이 부르는 git 에 닿고, 부르는 쪽의 주입은 건드리지 않는다', { skip: SKIP }, (t) => {
+  const f = fixture(t);
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const seen = join(f.box, 'seen.txt');
+  // ls-remote 가 받은 GIT_CONFIG_* 환경만 적고 성공으로 답한다 — 네트워크를 쓰지 않는다
+  const dir = join(f.box, 'stub-env');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'git'),
+    '#!/bin/sh\nfor a in "$@"; do\n'
+    + `  if [ "$a" = ls-remote ]; then\n`
+    + `    printf '%s|%s=%s|%s=%s\\n' "$GIT_CONFIG_COUNT" "$GIT_CONFIG_KEY_0" "$GIT_CONFIG_VALUE_0" "$GIT_CONFIG_KEY_1" "$GIT_CONFIG_VALUE_1" > ${seen}\n`
+    + '    exit 0\n  fi\ndone\n'
+    + `exec ${realGit} "$@"\n`);
+  chmodSync(join(dir, 'git'), 0o755);
+
+  const dry = (env, d) =>
+    spawnSync(BASH, [SCRIPT, d, '--ref', `v${PKG.version}`, '--dry-run'], { env, encoding: 'utf8' });
+
+  // (A) 가드가 없으면 멈춘 연결이 끊기지 않는다 — 우리 ls-remote 가 실제로 그 값을 받는다
+  const a = f.mk('guard');
+  const g1 = dry({ ...f.env, PATH: `${dir}:${f.env.PATH}` }, a.dir);
+  assert.equal(g1.status, 0, `${g1.stdout ?? ''}${g1.stderr ?? ''}`);
+  assert.equal(readFileSync(seen, 'utf8').trim(),
+    '2|http.lowSpeedLimit=1|http.lowSpeedTime=60');
+
+  // (B) 부르는 쪽이 이미 GIT_CONFIG_COUNT 로 자기 설정을 주입하고 있으면 덮지 않는다.
+  // 덮으면 그쪽 설정이 조용히 사라진다 — 가드를 건너뛰는 것이 그 대가다
+  const b = f.mk('injected');
+  const g2 = dry({
+    ...f.env,
+    PATH: `${dir}:${f.env.PATH}`,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'user.name',
+    GIT_CONFIG_VALUE_0: 'caller',
+  }, b.dir);
+  assert.equal(g2.status, 0, `${g2.stdout ?? ''}${g2.stderr ?? ''}`);
+  assert.equal(readFileSync(seen, 'utf8').trim(), '1|user.name=caller|=');
+
+  // (C) 가드가 실제로 막으려는 자리는 npm 이 git 의존을 받으려고 부르는 git 이다 — `--ref` 실사용 경로다.
+  // 상속이 일반론이 아니라 이 머신에서 참인지를 여기서 고정한다. 우리 호출과 npm 의 호출은
+  // `refs/tags/…` 인자로 가른다: 우리 것은 통과시키고, npm 의 것이 받은 환경만 적고 실패시킨다
+  const npmSeen = join(f.box, 'npm-seen.txt');
+  const dir2 = join(f.box, 'stub-npm');
+  mkdirSync(dir2, { recursive: true });
+  writeFileSync(join(dir2, 'git'),
+    '#!/bin/sh\n'
+    + 'for a in "$@"; do case "$a" in refs/tags/*) exit 0 ;; esac; done\n'
+    + 'for a in "$@"; do\n'
+    + '  if [ "$a" = ls-remote ]; then\n'
+    + `    printf '%s=%s|%s=%s\\n' "$GIT_CONFIG_KEY_0" "$GIT_CONFIG_VALUE_0" "$GIT_CONFIG_KEY_1" "$GIT_CONFIG_VALUE_1" > ${npmSeen}\n`
+    + '    exit 128\n  fi\ndone\n'
+    + `exec ${realGit} "$@"\n`);
+  chmodSync(join(dir2, 'git'), 0o755);
+
+  const c = f.mk('npmgit');
+  const g3 = spawnSync(BASH, [SCRIPT, c.dir, '--ref', `v${PKG.version}`],
+    { env: { ...f.env, PATH: `${dir2}:${f.env.PATH}` }, encoding: 'utf8' });
+  const out3 = `${g3.stdout ?? ''}${g3.stderr ?? ''}`;
+  assert.equal(g3.status, 1, out3);
+  assert.match(out3, /npm install 이 실패했다/);
+  assert.equal(existsSync(npmSeen), true, `npm 이 git 을 부르지 않았다: ${out3}`);
+  assert.equal(readFileSync(npmSeen, 'utf8').trim(),
+    'http.lowSpeedLimit=1|http.lowSpeedTime=60');
+});
