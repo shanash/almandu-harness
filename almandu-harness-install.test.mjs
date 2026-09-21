@@ -414,7 +414,7 @@ test('--ref 재실행은 이미 설치돼 있으면 npm 을 부르지 않는다'
   writeFileSync(join(stub, 'git'),
     `#!/bin/sh\nfor a in "$@"; do [ "$a" = ls-remote ] && exit 0; done\nexec ${realGit} "$@"\n`);
   writeFileSync(join(stub, 'npm'),
-    `#!/bin/sh\nfor a in "$@"; do [ "$a" = install ] && printf 'install\\n' >> ${npmLog}; done\nexec ${realNpm} "$@"\n`);
+    `#!/bin/sh\nfor a in "$@"; do [ "$a" = install ] && printf 'install\\n' >> "${npmLog}"; done\nexec ${realNpm} "$@"\n`);
   chmodSync(join(stub, 'git'), 0o755);
   chmodSync(join(stub, 'npm'), 0o755);
 
