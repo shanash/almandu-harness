@@ -552,7 +552,7 @@ test('정지 가드는 우리 git 과 npm 이 부르는 git 에 닿고, 부르�
   writeFileSync(join(dir, 'git'),
     '#!/bin/sh\nfor a in "$@"; do\n'
     + `  if [ "$a" = ls-remote ]; then\n`
-    + `    printf '%s|%s=%s|%s=%s\\n' "$GIT_CONFIG_COUNT" "$GIT_CONFIG_KEY_0" "$GIT_CONFIG_VALUE_0" "$GIT_CONFIG_KEY_1" "$GIT_CONFIG_VALUE_1" > ${seen}\n`
+    + `    printf '%s|%s=%s|%s=%s\\n' "$GIT_CONFIG_COUNT" "$GIT_CONFIG_KEY_0" "$GIT_CONFIG_VALUE_0" "$GIT_CONFIG_KEY_1" "$GIT_CONFIG_VALUE_1" > "${seen}"\n`
     + '    exit 0\n  fi\ndone\n'
     + `exec ${realGit} "$@"\n`);
   chmodSync(join(dir, 'git'), 0o755);
@@ -591,7 +591,7 @@ test('정지 가드는 우리 git 과 npm 이 부르는 git 에 닿고, 부르�
     + 'for a in "$@"; do case "$a" in refs/tags/*) exit 0 ;; esac; done\n'
     + 'for a in "$@"; do\n'
     + '  if [ "$a" = ls-remote ]; then\n'
-    + `    printf '%s=%s|%s=%s\\n' "$GIT_CONFIG_KEY_0" "$GIT_CONFIG_VALUE_0" "$GIT_CONFIG_KEY_1" "$GIT_CONFIG_VALUE_1" > ${npmSeen}\n`
+    + `    printf '%s=%s|%s=%s\\n' "$GIT_CONFIG_KEY_0" "$GIT_CONFIG_VALUE_0" "$GIT_CONFIG_KEY_1" "$GIT_CONFIG_VALUE_1" > "${npmSeen}"\n`
     + '    exit 128\n  fi\ndone\n'
     + `exec ${realGit} "$@"\n`);
   chmodSync(join(dir2, 'git'), 0o755);
