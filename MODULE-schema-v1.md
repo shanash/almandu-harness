@@ -98,7 +98,7 @@ watch: .cs,.asmdef                          # 선택. R1 이 "소스"로 볼 확
 ### 태그가 리뷰어를 정한다
 
 `[테스트|grep|리뷰]` 는 R5 를 만족시키는 표시가 아니라 **누가 이 문장을 검증하는지**의 배치다.
-`npx --no-install almandu-module-gate --review` 가 diff 를 받아 그 배치를 낸다 — 범위는 diff 가 아니라 **diff 가 건드린
+`node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/module-gate.mjs" --review` 가 diff 를 받아 그 배치를 낸다 — 범위는 diff 가 아니라 **diff 가 건드린
 파일을 근거로 인용하는 불변식 전부**이고, 그 목록은 R11 이 이미 걷는 것과 같다.
 
 | 태그 | 리뷰어가 하는 일 | 증거 |
@@ -189,7 +189,7 @@ R11(b) 는 다른 질문이다 — "근거 파일이 바뀌었나" 가 아니라
 줄번호 없는 인용은 줄에 대해 아무 주장도 하지 않으므로 (b) 의 대상이 아니다.
 
 R11(b) 가 못 보는 것은 **여러 커밋에 걸쳐 조금씩 밀린 인용**이다 — 각 커밋에서 0 줄이라 조용하다.
-그 전수 감사는 규칙이 아니라 모드다: `npx --no-install almandu-module-gate --audit` 는 diff 를 아예 보지 않고
+그 전수 감사는 규칙이 아니라 모드다: `node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/module-gate.mjs" --audit` 는 diff 를 아예 보지 않고
 "지금 그 줄에 무엇이 있나" 만 묻는다. 파일 끝을 넘었거나 인용 범위가 통째로 빈 줄·중괄호뿐이면
 그 인용은 아무것도 주장하지 못한다고 답한다. 주석 줄은 내용으로 센다 — 여러 계약서가 "HARD INVARIANT"
 주석을 근거로 인용한다. 이 모드는 커밋 경로에 걸려 있지 않고(평소 판정에 섞이지 않는다) 사람이 부른다.

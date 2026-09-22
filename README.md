@@ -70,6 +70,8 @@ curl -fsSL https://raw.githubusercontent.com/shanash/almandu-harness/<태그>/al
 **대상 리포에 커밋이 하나는 있어야 한다 — `/module-work` 의 1단계가 HEAD 를 읽는다. 갓 `git init` 한
 리포라면 먼저 한 번 커밋해라 (스크립트가 그 경우 첫 커밋을 다음 블록의 0 번으로 낸다).**
 커맨드가 필요 없으면 `--no-commands` 를 준다. 이미 있는 파일은 덮어쓰지 않으므로 고쳐 둔 커맨드는 안전하다.
+**그 뒷면이 업그레이드다** — 커맨드 문구가 바뀐 판으로 올릴 때는 `.claude/commands/` 의 사본을 지우고
+설치 도구를 다시 돌려야 새 문구가 들어온다. `npm i` 만으로는 옛 문구가 그대로 남는다.
 
 설치한 리포는 계약서에서 이 패키지를 `in [[harness]] … (외부: almandu-harness)` 로 인용한다 (R14).
 게이트는 `node_modules/` 를 걷지 않으므로 이 패키지의 계약서는 소비 리포의 판정 대상이 아니다 —
@@ -102,7 +104,7 @@ MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리의 어댑터, `.claude
 
 | 자리 | 형태 | 왜 |
 |---|---|---|
-| 훅 · 루트 CLAUDE.md 문단 · `.claude/commands/` 의 커맨드 · 설치 스크립트 phase 7 | `node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/<파일>"` | cwd 를 보장할 수 없다. 훅의 cwd 는 git 이 정하고, 커맨드는 에이전트가 어느 디렉토리에서 부를지 모른다 |
+| 훅 · 루트 CLAUDE.md 문단 · `.claude/commands/` 의 커맨드 · 설치 스크립트 phase 7 · `MODULE-schema-v1.md` 본문 | `node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/<파일>"` | cwd 를 보장할 수 없다. 훅의 cwd 는 git 이 정하고, 커맨드와 규칙서는 에이전트가 어느 디렉토리에서 읽을지 모른다 |
 | README·`GUIDE.md` 의 실행 블록, CI 워크플로 | `node node_modules/almandu-harness/<파일>` | 그 자리에 "리포 루트에서 부른다" 가 적혀 있다 |
 | 이름 해석에 기대는 실행기(`npx` 등) | 쓰지 않는다 | 워크스페이스 멤버에서 풀리지 않고(2026-09-21 실측: npm 11.17.0 실패·12.0.2 통과), 풀리지 않으면 조회조차 막지 못해 레지스트리 요청이 나가 거기서 매달린다. bin 은 표면으로 남는다 — 이미 놓인 훅이 옛 이름을 부른다 |
 
@@ -119,7 +121,7 @@ node node_modules/almandu-harness/module-gate.mjs --audit             # diff 무
 node node_modules/almandu-harness/module-gate.mjs --json              # 같은 판정을 기계 판독 형태로 (stdout 전용)
 node node_modules/almandu-harness/module-gate.mjs --scope <경로>...   # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
 node node_modules/almandu-harness/module-gate.mjs --review            # 판정 안 함: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그
-npm test                                                 # 회귀 테스트 134개, ~74초 (2026-09-22 실측)
+npm test                                                 # 회귀 테스트 135개, ~72초 (2026-09-22 실측)
 ```
 
 이름 해석에 기대는 실행기는 어디서도 쓰지 않는다 — `almandu-*` 이름은 npm 에 올라가 있지 않아서, 로컬 설치가

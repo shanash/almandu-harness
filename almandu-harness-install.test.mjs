@@ -207,8 +207,8 @@ test('hwatu 회귀: 부모에 package.json·node_modules·workspaces 가 있어�
   assert.equal(hook.status, 0, hookOut);
   assert.equal(existsSync(npxSeen), false, `훅이 아직 npx 를 지난다: ${hookOut}`);
 
-  // 훅에 물은 것과 같은 질문을 루프에 한다 — 커맨드가 적은 그 문자열이 멤버에서 npm 해소 없이 도는가.
-  // cwd 를 리포 루트가 아닌 하위로 두는 것이 요점이다: 상대 경로판은 여기서 죽고 절대화판만 산다
+  // 커맨드가 적은 그 문자열이 멤버에서 npm 해소 없이 도는가 — 훅에 물은 것과 같은 질문이다.
+  // 형태는 loopCall() 이 이미 고정했으므로(닫는 따옴표까지) 여기 남는 것은 cwd 질문 하나다
   mkdirSync(join(r.dir, 'sub'), { recursive: true });
   const loop = spawnSync('sh', ['-c', `${loopCall(r.dir)} scope .`],
     { cwd: join(r.dir, 'sub'), env: { ...f.env, PATH: `${stub}:${f.env.PATH}` }, encoding: 'utf8' });

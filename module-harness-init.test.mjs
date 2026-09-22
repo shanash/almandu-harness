@@ -196,3 +196,20 @@ test('실리는 module-review 와 이 리포의 사본은 경로 둘 말고는 �
   assert.equal(back, readFileSync(join(HERE, '.claude/commands/module-review.md'), 'utf8'),
     'commands/module-review.md 와 .claude/commands/module-review.md 가 갈라졌다 — 어느 쪽이 앞선 판인지는 고친 사람이 안다');
 });
+
+test('소비 리포에 닿는 문서는 npx 로 부르라고 시키지 않는다', () => {
+  // 부르는 형태의 출처는 README 설치 절의 경로 형태 표 하나다 — I6·I7 과 같은 부류의 약속인데,
+  // 그 표가 npx 를 "쓰지 않는다" 로 정한 뒤에도 문서 스물한 곳이 시키고 있던 것이 2026-09-22 다.
+  // 처방이 아닌 자리는 밖이다 — 이력·설계, 그리고 bin 을 세기만 하는 MODULE.md 진입점 칸이 그렇다
+  const bins = Object.keys(JSON.parse(readFileSync(join(HERE, 'package.json'), 'utf8')).bin);
+  const watched = ['README.md', 'GUIDE.md', 'MODULE-schema-v1.md',
+    ...commandNames().map((n) => `commands/${n}`)];
+  for (const rel of watched) {
+    readFileSync(join(HERE, rel), 'utf8').split('\n').forEach((line, i) => {
+      if (!line.includes('npx')) return;
+      const hit = bins.find((b) => line.includes(b));
+      assert.equal(hit, undefined,
+        `${rel}:${i + 1} 이 npx 로 ${hit} 를 부르라고 시킨다 — README 경로 형태 표를 따른다`);
+    });
+  }
+});
