@@ -188,7 +188,7 @@ test('실리는 커맨드에 리포 고유 경로가 없다', () => {
 test('실리는 module-review 와 이 리포의 사본은 경로 둘 말고는 같다', () => {
   // 치환 목록은 여기 상수로 둔다. 셋째가 생기면 DESIGN "템플릿의 경계" 표와 한 커밋에서 같이 는다
   const SUBS = [
-    ['npx --no-install almandu-module-loop', 'node loop/loop.mjs'],
+    ['node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/loop/loop.mjs"', 'node loop/loop.mjs'],
     ['node_modules/almandu-harness/review/personas/', 'review/personas/'],
   ];
   let back = readFileSync(join(COMMANDS, 'module-review.md'), 'utf8');

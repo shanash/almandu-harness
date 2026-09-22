@@ -2,7 +2,7 @@
 
 인자로 받은 것이 이번 작업의 요청이다: $ARGUMENTS
 
-루프는 `npx --no-install almandu-module-loop` 다 (하네스 패키지의 bin 이고, 판본은 package.json 이 고정한 태그가 정한다).
+루프는 `node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/loop/loop.mjs"` 다 (하네스 패키지의 파일이고, 판본은 package.json 이 고정한 태그가 정한다). 이름 해석에 기대는 실행기로 부르지 않는다 — 워크스페이스 멤버에서 그 실행기가 멤버의 `node_modules/.bin` 을 보지 않아 풀리지 않는다.
 **루프도 게이트도 이 리포에서 고치지 않는다** — `node_modules/` 안은 설치된 사본이라 고치면 다음 `npm i` 에 사라진다. 하네스는 하네스 리포에서 고치고 새 태그로 들어온다.
 고칠 이유가 보이면 하네스 리포에 알린다.
 
@@ -11,7 +11,7 @@
 고칠 파일 경로로 세션을 연다. 아직 아무것도 고치지 않는다.
 
 ```
-npx --no-install almandu-module-loop scope <경로>...
+node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/loop/loop.mjs" scope <경로>...
 ```
 
 루프가 내는 것은 **읽어야 할 계약 목록**이다. 그 MODULE.md 를 `cat` 이 아니라 **Read 로** 연다 — 같은 디렉토리의 CLAUDE.md 규칙이 함께 실려야 한다.
@@ -30,7 +30,7 @@ MODULE.md 가 한 장도 없으면 목록이 빈다 — 먼저 `/module-draft <�
 ## 3. 기계에게 먼저 검사받는다
 
 ```
-npx --no-install almandu-module-loop reconcile
+node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/loop/loop.mjs" reconcile
 ```
 
 게이트가 규칙 위반을 세고, 루프가 "이번 변경이 어느 계약을 약하게 했나" 를 되묻는다.
@@ -49,7 +49,7 @@ npx --no-install almandu-module-loop reconcile
 ## 5. 답을 커밋에 박아 넣는다
 
 ```
-npx --no-install almandu-module-loop commit -m "<type>(<scope>): <제목>" [--contract "<계약 칸을 왜 고쳤나 한 줄>"]
+node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/loop/loop.mjs" commit -m "<type>(<scope>): <제목>" [--contract "<계약 칸을 왜 고쳤나 한 줄>"]
 ```
 
 - 계약 칸을 고쳤으면 `--contract` 없이는 커밋되지 않는다 (루프 I6)
@@ -62,4 +62,4 @@ npx --no-install almandu-module-loop commit -m "<type>(<scope>): <제목>" [--co
 - 1단계를 건너뛰고 바로 고치기 — 범위 밖 파일은 5단계에서 거부되고, 그때 되돌리는 것이 더 비싸다
 - 고친 세션이 자기 변경을 리뷰하기
 - 리뷰 결과로 커밋 막기 — 막고 싶은 것이 생기면 그건 게이트 규칙 후보다
-- `npx --no-install almandu-harness-init` 을 기본값으로 돌리기 — 설치 스크립트가 이미 훅을 연결했고, 기본값으로 다시 돌리면 이 리포의 `core.hooksPath` 를 덮을 수 있다. 돌릴 일이 생기면 지금 값을 `--hooks-path` 로 넘긴다
+- `node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/module-harness-init.mjs"` 을 기본값으로 돌리기 — 설치 스크립트가 이미 훅을 연결했고, 기본값으로 다시 돌리면 이 리포의 `core.hooksPath` 를 덮을 수 있다. 돌릴 일이 생기면 지금 값을 `--hooks-path` 로 넘긴다

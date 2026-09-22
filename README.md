@@ -78,8 +78,8 @@ curl -fsSL https://raw.githubusercontent.com/shanash/almandu-harness/<태그>/al
 설치한 뒤 한 번 돌린다:
 
 ```
-npx --no-install almandu-harness-init --dry-run   # 무엇을 놓을지 먼저 본다
-npx --no-install almandu-harness-init
+node node_modules/almandu-harness/module-harness-init.mjs --dry-run   # 무엇을 놓을지 먼저 본다
+node node_modules/almandu-harness/module-harness-init.mjs
 ```
 
 넷을 놓는다 — `.githooks/pre-commit`(+ `core.hooksPath`), 루트 CLAUDE.md 의 계약 문단,
@@ -96,25 +96,37 @@ MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리의 어댑터, `.claude
 어댑터 문구는 `MODULE-schema-v1.md` 에서 읽어 쓴다 — 설치 도구 안에 사본을 두지 않는다.
 "로드되는 자리마다 같은 문장이 와야 한다" 가 약속이 아니라 구조인 자리다.
 
+### 경로 형태의 경계
+
+소비 리포에서 이 패키지를 부르는 형태는 자리마다 다르고, 그 경계는 **cwd 를 보장할 수 있는지** 하나다.
+
+| 자리 | 형태 | 왜 |
+|---|---|---|
+| 훅 · 루트 CLAUDE.md 문단 · `.claude/commands/` 의 커맨드 · 설치 스크립트 phase 7 | `node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/<파일>"` | cwd 를 보장할 수 없다. 훅의 cwd 는 git 이 정하고, 커맨드는 에이전트가 어느 디렉토리에서 부를지 모른다 |
+| README·`GUIDE.md` 의 실행 블록, CI 워크플로 | `node node_modules/almandu-harness/<파일>` | 그 자리에 "리포 루트에서 부른다" 가 적혀 있다 |
+| 이름 해석에 기대는 실행기(`npx` 등) | 쓰지 않는다 | 워크스페이스 멤버에서 풀리지 않고(2026-09-21 실측: npm 11.17.0 실패·12.0.2 통과), 풀리지 않으면 조회조차 막지 못해 레지스트리 요청이 나가 거기서 매달린다. bin 은 표면으로 남는다 — 이미 놓인 훅이 옛 이름을 부른다 |
+
 ## 실행
 
+리포 루트에서. 하위 디렉토리에서는 훅과 같은 `$(git rev-parse --show-toplevel)` 형태를 쓴다 (위 표).
+
 ```
-npx --no-install almandu-module-gate                     # 작업 트리 vs HEAD
-npx --no-install almandu-module-gate --staged            # 인덱스만 (pre-commit)
-npx --no-install almandu-module-gate --base origin/main
-npx --no-install almandu-module-gate --fix               # R12 근거 경로 자동 정정
-npx --no-install almandu-module-gate --audit             # diff 무관: 인용 줄이 실물을 가리키는지 전수 대조
-npx --no-install almandu-module-gate --json              # 같은 판정을 기계 판독 형태로 (stdout 전용)
-npx --no-install almandu-module-gate --scope <경로>...   # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
-npx --no-install almandu-module-gate --review            # 판정 안 함: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그
-npm test                                                 # 회귀 테스트 134개, ~85초
+node node_modules/almandu-harness/module-gate.mjs                     # 작업 트리 vs HEAD
+node node_modules/almandu-harness/module-gate.mjs --staged            # 인덱스만 (pre-commit)
+node node_modules/almandu-harness/module-gate.mjs --base origin/main
+node node_modules/almandu-harness/module-gate.mjs --fix               # R12 근거 경로 자동 정정
+node node_modules/almandu-harness/module-gate.mjs --audit             # diff 무관: 인용 줄이 실물을 가리키는지 전수 대조
+node node_modules/almandu-harness/module-gate.mjs --json              # 같은 판정을 기계 판독 형태로 (stdout 전용)
+node node_modules/almandu-harness/module-gate.mjs --scope <경로>...   # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
+node node_modules/almandu-harness/module-gate.mjs --review            # 판정 안 함: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그
+npm test                                                 # 회귀 테스트 134개, ~74초 (2026-09-22 실측)
 ```
 
-`--no-install` 은 뺄 수 없다 — `almandu-*` 이름은 npm 에 올라가 있지 않아서, 로컬 설치가 없는 머신에서 맨 `npx` 는
-레지스트리로 넘어가 같은 이름으로 선점된 남의 패키지를 받아 실행할 수 있다.
-다만 그것이 막는 것은 **실행**이지 조회가 아니다 — 2026-09-21 실측(npm 11.17.0·12.0.2): 이름이 로컬에서 풀리지
-않으면 `--no-install` 이어도 `registry.npmjs.org` 로 요청이 나가고 거기서 매달린다 (`--offline` 이면 `ENOTCACHED` 로
-빨리 죽는다). 그래서 사람 없이 매 커밋마다 도는 훅은 npx 를 아예 쓰지 않고 파일 경로로 부른다 (위 설치 절).
+이름 해석에 기대는 실행기는 어디서도 쓰지 않는다 — `almandu-*` 이름은 npm 에 올라가 있지 않아서, 로컬 설치가
+없는 머신에서 그런 실행기는 레지스트리로 넘어가 같은 이름으로 선점된 남의 패키지를 받아 실행할 수 있고,
+설령 실행을 막아도 그것은 **실행**이지 조회가 아니다 — 2026-09-21 실측(npm 11.17.0·12.0.2): 이름이 로컬에서
+풀리지 않으면 조회 자체가 `registry.npmjs.org` 로 나가고 거기서 매달린다. 그래서 사람 없이 매 커밋마다 도는
+훅과 커맨드는 파일 경로로 직접 부른다 (위 경로 형태 표).
 
 의존은 node 표준 라이브러리와 `git` CLI 뿐이다. 종료 코드로만 말한다 — FAIL 이 하나라도 있으면 1.
 `--json` 도 마찬가지다. 봉투의 `fail` 은 종료 코드와 같은 말이고, 그것이 부르는 쪽이 판정을 다시
@@ -162,7 +174,7 @@ R1 이 코드와 계약을 한 커밋에 묶기 때문이다: 쪼갤 수 없으�
 스스로 통과를 선언할 자리는 없다. 기준선은 `.git/module-loop/` 안에서만 살고 HEAD 와 게이트 소스
 해시로 봉인되어, 둘 중 하나라도 움직이면 세션을 거부한다.
 
-소비 리포에서는 `npx --no-install almandu-module-loop <명령>` 으로 같은 CLI 를 부른다 (0.6.0 부터, 0.7.0 부터 이 이름). 명령·플래그·종료 코드·트레일러 형식은 공개 표면이라 DESIGN.md 7절 버전 표를 따른다. 페르소나는 `node_modules/almandu-harness/review/personas/` 에 실린다. 커맨드는 0.8.0 부터 `commands/` 로 함께 실리고 설치 도구가 `.claude/commands/` 에 놓는다 — 0.6.0 의 "경로가 리포마다 달라 싣지 않는다" 는 전제가 틀렸다. 경로가 다른 것은 소스를 체크아웃해 둔 이 리포뿐이고, 소비 리포는 전부 `node_modules/almandu-harness/…` 로 같다.
+bin 은 `almandu-module-loop` 이고(0.6.0 부터, 0.7.0 부터 이 이름), 소비 리포는 그것을 이름 해석에 기대는 실행기가 아니라 `node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/loop/loop.mjs" <명령>` 파일 경로로 부른다 (2026-09-22, 위 경로 형태 표). 명령·플래그·종료 코드·트레일러 형식은 공개 표면이라 DESIGN.md 7절 버전 표를 따른다. 페르소나는 `node_modules/almandu-harness/review/personas/` 에 실린다. 커맨드는 0.8.0 부터 `commands/` 로 함께 실리고 설치 도구가 `.claude/commands/` 에 놓는다 — 0.6.0 의 "경로가 리포마다 달라 싣지 않는다" 는 전제가 틀렸다. 경로가 다른 것은 소스를 체크아웃해 둔 이 리포뿐이고, 소비 리포는 전부 `node_modules/almandu-harness/…` 로 같다.
 
 ## 이름 변경 (0.7.0)
 

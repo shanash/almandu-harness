@@ -91,6 +91,13 @@ const install = (f, dir, ...args) => run(f, dir, '--spec', `file:${TGZ}`, ...arg
 
 const read = (dir, rel) => readFileSync(join(dir, rel), 'utf8');
 const has = (dir, rel) => existsSync(join(dir, rel));
+// 커맨드가 루프를 부르는 문자열을 다시 적지 않는다 — 다시 적으면 phase 7 이 GATE_CALL 을
+// 공유하기 전에 갈라져 있던 자리가 테스트 쪽에 새로 생긴다 (MODULE.md 2026-09-21 이력)
+const loopCall = (dir) => {
+  const m = read(dir, '.claude/commands/module-work.md').match(/^node .*\/loop\/loop\.mjs"/m);
+  assert.ok(m, '놓인 /module-work 가 루프를 파일 경로로 부르지 않는다');
+  return m[0];
+};
 const localHooksPath = (f, dir) =>
   spawnSync('git', ['-C', dir, 'config', '--local', '--get', 'core.hooksPath'], { env: f.env, encoding: 'utf8' });
 
@@ -178,6 +185,7 @@ test('hwatu 회귀: 부모에 package.json·node_modules·workspaces 가 있어�
     `${JSON.stringify({ name: 'parent', private: true, workspaces: ['child'] }, null, 2)}\n`);
   const parentBytes = readFileSync(join(parent, 'package.json'));
   const r = f.mk('parent/child');
+  r.git('commit', '-q', '--allow-empty', '-m', 'init');
 
   const got = install(f, r.dir);
   // exit 0 은 phase 7 이 훅과 같은 문자열을 sh 로 돌려 게이트가 실제로 실행된 것까지 포함한다 (D5 정정: MODULE.md 이력)
@@ -198,6 +206,15 @@ test('hwatu 회귀: 부모에 package.json·node_modules·workspaces 가 있어�
   const hookOut = `${hook.stdout ?? ''}${hook.stderr ?? ''}`;
   assert.equal(hook.status, 0, hookOut);
   assert.equal(existsSync(npxSeen), false, `훅이 아직 npx 를 지난다: ${hookOut}`);
+
+  // 훅에 물은 것과 같은 질문을 루프에 한다 — 커맨드가 적은 그 문자열이 멤버에서 npm 해소 없이 도는가.
+  // cwd 를 리포 루트가 아닌 하위로 두는 것이 요점이다: 상대 경로판은 여기서 죽고 절대화판만 산다
+  mkdirSync(join(r.dir, 'sub'), { recursive: true });
+  const loop = spawnSync('sh', ['-c', `${loopCall(r.dir)} scope .`],
+    { cwd: join(r.dir, 'sub'), env: { ...f.env, PATH: `${stub}:${f.env.PATH}` }, encoding: 'utf8' });
+  const loopOut = `${loop.stdout ?? ''}${loop.stderr ?? ''}`;
+  assert.equal(loop.status, 0, loopOut);
+  assert.equal(existsSync(npxSeen), false, `루프 호출이 아직 npx 를 지난다: ${loopOut}`);
 });
 
 // ---------- 6 ----------
@@ -472,11 +489,13 @@ test('설치가 끝나면 /module-work 가 설 수 있다', { skip: SKIP }, (t) 
   assert.equal(got.code, 0, got.out);
   for (const n of ['module-work.md', 'module-review.md', 'module-draft.md'])
     assert.ok(has(a.dir, `.claude/commands/${n}`), `${n} 이 없다: ${got.out}`);
-  assert.match(read(a.dir, '.claude/commands/module-work.md'), /almandu-module-loop/);
+  const loopFile = 'node_modules/almandu-harness/loop/loop.mjs';
+  assert.ok(read(a.dir, '.claude/commands/module-work.md').includes(loopFile));
+  assert.ok(has(a.dir, loopFile), '커맨드가 가리키는 루프가 패키지에 실려 오지 않았다');
   const persona = 'node_modules/almandu-harness/review/personas/invariant-judge.md';
   assert.ok(read(a.dir, '.claude/commands/module-review.md').includes(persona));
   assert.ok(has(a.dir, persona), '커맨드가 가리키는 페르소나가 패키지에 실려 오지 않았다');
-  const scope = spawnSync(BASH, ['-c', 'npx --no-install almandu-module-loop scope .'],
+  const scope = spawnSync(BASH, ['-c', `${loopCall(a.dir)} scope .`],
     { cwd: a.dir, env: f.env, encoding: 'utf8' });
   assert.equal(scope.status, 0, `${scope.stdout}${scope.stderr}`);
   assert.match(got.out, /\/module-draft/);
@@ -498,7 +517,7 @@ test('설치가 끝나면 /module-work 가 설 수 있다', { skip: SKIP }, (t) 
   assert.equal(g3.code, 0, g3.out);
   assert.match(g3.out, /커밋이 하나도 없다/);
   assert.match(g3.out, /0\. git add -A/);
-  const scope0 = spawnSync(BASH, ['-c', 'npx --no-install almandu-module-loop scope .'],
+  const scope0 = spawnSync(BASH, ['-c', `${loopCall(c.dir)} scope .`],
     { cwd: c.dir, env: f.env, encoding: 'utf8' });
   assert.notStrictEqual(scope0.status, 0,
     '커밋 0 개에서 loop scope 가 이제 선다 — phase 1 의 경고와 phase 8 의 0 번을 지울 때다 (DESIGN 10절)');

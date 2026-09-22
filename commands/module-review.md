@@ -2,7 +2,7 @@
 
 ## 절차 — 반드시 이 순서로
 
-1. `npx --no-install almandu-module-loop review --packet` 을 돌린다 (계약 칸이 바뀌었으면 `--contract "<무엇이 왜 바뀌었나>"` 를 함께).
+1. `node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/loop/loop.mjs" review --packet` 을 돌린다 (계약 칸이 바뀌었으면 `--contract "<무엇이 왜 바뀌었나>"` 를 함께).
    거부당하면 멈추고 그대로 보고한다 — 게이트가 FAIL 이면 리뷰는 돌지 않는다. 기계가 이미 거부한 것에 판단을 붙일 이유가 없다
 2. `.git/module-loop/review-packet.json` 을 읽는다. `review_invariants` 가 비었으면 **여기서 끝낸다** —
    물을 질문이 없고, 커밋 트레일러가 `Review: 불변식=없음(0)` 으로 그 사실을 남긴다
@@ -11,7 +11,7 @@
    - 패킷 전문 (근거 파일을 직접 읽어도 된다고 알린다)
    — `contract-checker.md`(2026-09-16)와 `scope-watcher.md`(2026-09-17)는 리뷰에서 내려졌다 (DESIGN-review 3절). 파일은 남아 있지만 띄우지 않는다
 4. 답을 `loop review --answer` 로 기록한다:
-   - `npx --no-install almandu-module-loop review --answer invariant-judge <참|거짓|판단불가> --invariant <module/id> --reason "…" [--evidence 파일:라인]...`
+   - `node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/loop/loop.mjs" review --answer invariant-judge <참|거짓|판단불가> --invariant <module/id> --reason "…" [--evidence 파일:라인]...`
      — 패킷의 `review_invariants` 항목마다 한 번씩
 5. `거짓` 이 나오면 그 reason 과 evidence 를 전문 그대로 사용자에게 보여주고,
    그것이 사고인지 오탐인지 물어본다. 판단은 사람이 한다
