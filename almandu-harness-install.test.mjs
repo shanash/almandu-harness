@@ -739,3 +739,106 @@ test('전역 훅이 체인하면 install 이 그 자리에 게이트를 배선�
   assert.match(vB.out, /R0/, '커밋을 막은 것이 얹힌 게이트의 판정이어야 한다');
   assert.match(vB.out, /global-hook-ran/, '전역 훅은 얹은 뒤에도 계속 돈다');
 });
+
+// ---------- 22 ----------
+test('의존 spec 을 바꾸는 재설치는 락 루트 레코드를 맞춰 EALLOWGIT 를 피하고, 실패하면 락을 되돌린다', { skip: SKIP }, (t) => {
+  const f = fixture(t);
+  // 태그 둘이 version 만 다른 git 리포 — git 의존이어야 npm 12 의 allow-git 이 걸린다 (file: 은 안 걸린다)
+  const src = f.mk('harness-src');
+  const tx = spawnSync('tar', ['-xzf', TGZ, '-C', src.dir, '--strip-components=1'], { encoding: 'utf8' });
+  assert.equal(tx.status, 0, tx.stderr);
+  const bump = (v) => {
+    const p = JSON.parse(read(src.dir, 'package.json'));
+    p.version = v;
+    writeFileSync(join(src.dir, 'package.json'), `${JSON.stringify(p, null, 2)}\n`);
+    src.git('add', '-A');
+    src.git('commit', '-q', '-m', v);
+    src.git('tag', `t${v}`);
+  };
+  bump('0.0.1');
+  bump('0.0.2');
+  const url = `git+file://${src.dir}`;
+
+  const r = f.mk('repo');
+  const first = run(f, r.dir, '--spec', `${url}#t0.0.1`);
+  assert.equal(first.code, 0, first.out);
+  r.git('add', '-A');
+  r.git('commit', '-q', '-m', 'seed');
+  const lockBefore = read(r.dir, 'package-lock.json');
+  const rootSpec = () => JSON.parse(read(r.dir, 'package-lock.json')).packages[''].devDependencies['almandu-harness'];
+
+  // B — 예행연습은 락을 계획만 하고 쓰지 않는다
+  const dry = run(f, r.dir, '--spec', `${url}#t0.0.2`, '--dry-run');
+  assert.equal(dry.code, 0, dry.out);
+  assert.match(dry.out, /DRY \+ package-lock\.json 루트 레코드/);
+  assert.equal(read(r.dir, 'package-lock.json'), lockBefore);
+
+  // C — 없는 태그로 실패하면 락이 바이트째 돌아온다 (임시 사본도 남지 않는다)
+  const bad = run(f, r.dir, '--spec', `${url}#no-such-tag`);
+  assert.equal(bad.code, 1, bad.out);
+  assert.equal(read(r.dir, 'package-lock.json'), lockBefore);
+  assert.deepEqual(readdirSync(r.dir).filter((n) => n.includes('.almandu.')), []);
+
+  // A — 올리기가 선다. 이 arm 은 npm 12 에서만 결함을 드러낸다 (npm 11 이하엔 allow-git 이 없다)
+  const up = run(f, r.dir, '--spec', `${url}#t0.0.2`);
+  assert.equal(up.code, 0, up.out);
+  assert.doesNotMatch(up.out, /EALLOWGIT/);
+  assert.equal(JSON.parse(read(r.dir, 'node_modules/almandu-harness/package.json')).version, '0.0.2');
+  assert.match(rootSpec(), /#t0\.0\.2$/);
+
+  // D — dependencies 에 둔 소비 리포도 같은 키를 맞춘다 (CUR_FIELD 가 갈리는 자리)
+  const p = f.mk('prod');
+  assert.equal(run(f, p.dir, '--spec', `${url}#t0.0.1`).code, 0);
+  for (const [rel, rec] of [['package.json', (j) => j], ['package-lock.json', (j) => j.packages['']]]) {
+    const j = JSON.parse(read(p.dir, rel));
+    const o = rec(j);
+    o.dependencies = { 'almandu-harness': o.devDependencies['almandu-harness'] };
+    delete o.devDependencies;
+    writeFileSync(join(p.dir, rel), `${JSON.stringify(j, null, 2)}\n`);
+  }
+  const upP = run(f, p.dir, '--spec', `${url}#t0.0.2`);
+  assert.equal(upP.code, 0, upP.out);
+  assert.match(JSON.parse(read(p.dir, 'package-lock.json')).packages[''].dependencies['almandu-harness'], /#t0\.0\.2$/);
+
+  // E — npm install 도중 TERM 을 받아도 락이 돌아온다 (EXIT trap 이 사본을 지우기만 하면 안 된다)
+  const k = f.mk('killed');
+  assert.equal(run(f, k.dir, '--spec', `${url}#t0.0.1`).code, 0);
+  const lockK = read(k.dir, 'package-lock.json');
+  const stub = join(f.box, 'term-stub');
+  mkdirSync(stub, { recursive: true });
+  const realNpm = spawnSync('sh', ['-c', 'command -v npm'], { encoding: 'utf8' }).stdout.trim();
+  writeFileSync(join(stub, 'npm'),
+    `#!/bin/sh\nfor a in "$@"; do [ "$a" = install ] && { kill -TERM $PPID; sleep 2; exit 1; }; done\nexec ${realNpm} "$@"\n`);
+  chmodSync(join(stub, 'npm'), 0o755);
+  const term = spawnSync(BASH, [SCRIPT, k.dir, '--spec', `${url}#t0.0.2`],
+    { env: { ...f.env, PATH: `${stub}:${f.env.PATH}` }, encoding: 'utf8' });
+  assert.equal(term.status, 143, `${term.stdout}${term.stderr}`);
+  assert.equal(read(k.dir, 'package-lock.json'), lockK);
+  assert.deepEqual(readdirSync(k.dir).filter((n) => n.includes('.almandu.')), []);
+
+  // F — npm 이 성공한 뒤 처리된 TERM 은 락을 되돌리지 않는다 (bash 는 자식이 끝난 뒤 trap 을 돈다)
+  const s = f.mk('late-term');
+  assert.equal(run(f, s.dir, '--spec', `${url}#t0.0.1`).code, 0);
+  const stub2 = join(f.box, 'late-term-stub');
+  mkdirSync(stub2, { recursive: true });
+  writeFileSync(join(stub2, 'npm'),
+    `#!/bin/sh\nfor a in "$@"; do [ "$a" = install ] && { ${realNpm} "$@"; s=$?; kill -TERM $PPID; exit $s; }; done\nexec ${realNpm} "$@"\n`);
+  chmodSync(join(stub2, 'npm'), 0o755);
+  const late = spawnSync(BASH, [SCRIPT, s.dir, '--spec', `${url}#t0.0.2`],
+    { env: { ...f.env, PATH: `${stub2}:${f.env.PATH}` }, encoding: 'utf8' });
+  assert.equal(late.status, 143, `${late.stdout}${late.stderr}`);
+  const lockS = JSON.parse(read(s.dir, 'package-lock.json'));
+  const pkgSpec = (dir) => JSON.parse(read(dir, 'package.json')).devDependencies['almandu-harness'];
+  assert.match(lockS.packages[''].devDependencies['almandu-harness'], /#t0\.0\.2$/);
+  assert.equal(lockS.packages[''].devDependencies['almandu-harness'], pkgSpec(s.dir));
+  assert.equal(lockS.packages['node_modules/almandu-harness'].version, '0.0.2');
+  assert.deepEqual(readdirSync(s.dir).filter((n) => n.includes('.almandu.')), []);
+
+  // G — 같은 커밋을 가리키는 별칭 태그로 올려도 늦은 TERM 뒤 락과 package.json 이 같은 spec 을 든다
+  src.git('tag', 't0.0.2-alias', 't0.0.2');
+  const alias = spawnSync(BASH, [SCRIPT, s.dir, '--spec', `${url}#t0.0.2-alias`],
+    { env: { ...f.env, PATH: `${stub2}:${f.env.PATH}` }, encoding: 'utf8' });
+  assert.equal(alias.status, 143, `${alias.stdout}${alias.stderr}`);
+  assert.match(pkgSpec(s.dir), /#t0\.0\.2-alias$/);
+  assert.equal(JSON.parse(read(s.dir, 'package-lock.json')).packages[''].devDependencies['almandu-harness'], pkgSpec(s.dir));
+});

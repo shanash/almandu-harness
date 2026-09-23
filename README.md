@@ -132,7 +132,7 @@ node node_modules/almandu-harness/module-gate.mjs --audit             # diff 무
 node node_modules/almandu-harness/module-gate.mjs --json              # 같은 판정을 기계 판독 형태로 (stdout 전용)
 node node_modules/almandu-harness/module-gate.mjs --scope <경로>...   # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
 node node_modules/almandu-harness/module-gate.mjs --review            # 판정 안 함: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그
-npm test                                                 # 회귀 테스트 142개, ~71초 (2026-09-23 실측)
+npm test                                                 # 회귀 테스트 143개, ~71초 (2026-09-23 실측)
 ```
 
 이름 해석에 기대는 실행기는 어디서도 쓰지 않는다 — `almandu-*` 이름은 npm 에 올라가 있지 않아서, 로컬 설치가

@@ -265,6 +265,8 @@ FAIL 이 된다. 7절 버전 표의 첫 줄이 정확히 그것을 major 라고 
 0.x 인 동안은 major 자리가 없으므로 minor 를 그렇게 쓴다. 1.0 은 소비 리포가 둘 이상
 생기는 시점에 매긴다 — 하나뿐인 지금은 고정할 게 없다.
 
+2026-09-23 — 조건은 찼다(hwatu-cli 신규, kod-remastered 승격, 둘 다 v0.9.0). **그래도 1.0 은 미뤘다.** kod 승격에서 설치 스크립트의 업그레이드 경로가 npm 12 에서 서지 않는 것이 드러났고(EALLOWGIT — 락 루트 레코드의 옛 spec 이 새 노드를 root 로 잇지 못한다), 소비 리포가 1.0 에서 가장 먼저 밟는 것이 바로 그 경로다. 고친 판을 0.10.0 으로 낸다 — 위 표로는 버그 수정이라 patch 자리지만 사용자 결정으로 minor 를 썼다. 1.0 의 다음 조건은 아직 적지 않는다: 두 리포가 0.10.0 으로 한 번 올라 본 뒤 다시 본다.
+
 0.6.0 부터 루프 CLI 도 이 표의 대상이다 — 명령·플래그를 빼거나 뜻을 바꾸는 것, 종료 코드(0/1/2)의 뜻을 바꾸는 것, `Review:`·`Review-Verdict:` 트레일러의 형식을 바꾸는 것은 첫 줄과 같은 급이다. 소비 리포의 커맨드와 이미 커밋된 트레일러를 읽는 쪽이 깨진다. 패킷(`review-packet.json`)의 모양은 여기 들지 않는다 — 읽는 쪽인 페르소나가 같은 태그에 실려 함께 움직인다.
 
 2026-09-20 — 0.8.0 에서 `files` 에 `commands/` 가 늘고 설치 도구에 `--no-commands` 가 는다. 표의 넷째 줄이고, 이미 통과하던 계약서를 FAIL 시키지 않으므로 첫 줄은 아니다. 설치 스크립트의 CLI 는 이 표의 대상이 아니다 — 패키지에 실리지 않는다. **딸려 오는 결과 하나: 기본 ref 가 버전을 따라간다.** 스크립트 안의 `DEFAULT_REF` 가 `v<package.json 버전>` 과 같은지를 테스트가 고정하므로, 버전을 올리면 그 태그를 밀기 전까지 `--ref` 기본 경로는 `ls-remote` 에서 exit 1 이다. 커밋에서는 `--spec file:<tgz>` 로 증명하고 태그를 민 뒤 `--ref` 로 한 번 더 돌린다.
@@ -296,7 +298,7 @@ npm i -D github:shanash/almandu-harness#v0.7.0
 `.github/workflows/ci.yml` 이 이 셋을 돌린다 (2026-09-12):
 
 ```
-npm test                                      # 142개
+npm test                                      # 143개
 node module-gate.mjs --base origin/<base>     # PR 이 계약을 어기는지 (push 는 --base HEAD~1)
 node module-gate.mjs --audit                  # 전수 — nightly(03:00 KST)와 수동 실행만
 shellcheck almandu-harness-install.sh         # PR·push

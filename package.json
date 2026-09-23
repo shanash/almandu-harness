@@ -1,6 +1,6 @@
 {
   "name": "almandu-harness",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "MODULE.md 계약 게이트 — 디렉토리별 계약을 커밋 시점에 판정한다",
   "bin": {
     "almandu-module-gate": "module-gate.mjs",

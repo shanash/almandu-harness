@@ -40,7 +40,7 @@ else
   STALL_GUARD=0
 fi
 
-DEFAULT_REF="v0.9.0"
+DEFAULT_REF="v0.10.0"
 REPO_URL="https://github.com/shanash/almandu-harness"
 GH_BASE="github:shanash/almandu-harness"
 
@@ -565,14 +565,56 @@ if [ -n "$REF" ] && [ "$CUR_SPEC" = "$GH_BASE#$REF" ] && [ "$INSTALLED_VER" = "$
   SKIP_INSTALL=1
 fi
 
+LOCK="$ROOT/package-lock.json"
+LOCK_BAK=
+LOCK_PENDING=0
+# bash 는 npm 이 도는 동안 받은 신호를 npm 이 끝난 뒤에 처리한다 — 플래그만으로는 성공한 설치를
+# 되돌릴 수 있으므로, npm 이 package.json 에 새 spec 을 저장했는지를 함께 본다. 되돌린 락은
+# 늘 package.json 과 같은 쪽에 선다 (새 spec 과 비교하지 않는다 — npm 이 저장할 때 정규화한다)
+pkg_unsaved() {
+  [ "$(json_get "$PKG" "$CUR_FIELD" almandu-harness 2>/dev/null || true)" = "$CUR_SPEC" ]
+}
+# 락을 맞춘 뒤 npm 이 저장하기 전에 끝나면(실패·INT·TERM) 되돌린다. 되돌리지 못하면 사본을 남긴다
+cleanup_lock() {
+  rm -f "$ROOT/.npmrc.almandu.$$"
+  [ -n "$LOCK_BAK" ] && [ -f "$LOCK_BAK" ] || return 0
+  if [ "$LOCK_PENDING" = 1 ] && pkg_unsaved && ! cat "$LOCK_BAK" > "$LOCK"; then
+    warn "락을 되돌리지 못했다 — 원본은 $LOCK_BAK 에 있다"
+    return 0
+  fi
+  rm -f "$LOCK_BAK"
+}
 npm_install() {
   npm --prefix "$ROOT" install "$SAVE_FLAG" --workspaces=false --no-audit --no-fund "$NEW_SPEC" \
     || die "npm install 이 실패했다 (위의 npm 메시지를 보라)"
+  LOCK_PENDING=0
+}
+# npm 12 의 allow-git=root 는 락 루트 레코드가 든 옛 spec 을 루트 간선으로 읽어, 새 ref 의 노드를
+# root 가 아니라고 보고 거부한다 (EALLOWGIT, 2026-09-23 실측). 그 한 키만 새 spec 으로 맞춘다
+align_lock_root() {
+  cp "$LOCK" "$LOCK_BAK"
+  LOCK_PENDING=1
+  node -e '
+const fs = require("fs");
+const [file, field, spec] = process.argv.slice(1);
+const j = JSON.parse(fs.readFileSync(file, "utf8"));
+j.packages[""][field]["almandu-harness"] = spec;
+fs.writeFileSync(file, JSON.stringify(j, null, 2) + "\n");
+' "$LOCK" "$CUR_FIELD" "$SPEC"
 }
 if [ "$SKIP_INSTALL" = 1 ]; then
   ok "이미 설치돼 있다 (v$INSTALLED_VER)"
 else
-  if [ -n "$CUR_SPEC" ] && [ "$CUR_SPEC" != "$SPEC" ]; then say "+ 의존 변경: $CUR_SPEC → $SPEC"; fi
+  if [ -n "$CUR_SPEC" ] && [ "$CUR_SPEC" != "$SPEC" ]; then
+    say "+ 의존 변경: $CUR_SPEC → $SPEC"
+    if [ -f "$LOCK" ] && json_get "$LOCK" packages "" "$CUR_FIELD" almandu-harness >/dev/null 2>&1; then
+      LOCK_BAK="$ROOT/package-lock.json.almandu.$$"
+      trap cleanup_lock EXIT
+      trap 'exit 130' INT
+      trap 'exit 143' TERM
+      act "package-lock.json 루트 레코드의 almandu-harness 를 $SPEC 로 맞춘다" align_lock_root
+    fi
+  fi
   if [ -n "$REF" ] && [ -n "$INSTALLED_VER" ] && ver_gt "$INSTALLED_VER" "${REF#v}"; then
     warn "다운그레이드다: 설치된 v$INSTALLED_VER → $REF"
   fi
