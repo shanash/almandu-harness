@@ -41,16 +41,26 @@ curl -fsSL https://raw.githubusercontent.com/shanash/almandu-harness/<태그>/al
 `package.json`·`.npmrc`·`.gitignore` 를 맞추고 `npm --prefix` 로 그 걷기를 끊은 뒤, 설치 자리와 부모가
 그대로인지 확인하고 init 을 부른다.
 
-훅은 말없이 바꾸지 않는다. 이미 있는 `core.hooksPath`(로컬·전역)도, `.git/hooks` 에서 돌고 있는 훅도
-기본으로는 덮거나 가리지 않고, `--override-hooks` 를 줄 때만 바꾼다. 게이트가 연결되지 않으면 설치는
-그대로 끝내고 종료 코드 3 과 **덧붙일 한 줄**을 낸다 — 이 머신의 다른 리포에서 도는 전역 훅은 절대 고치라고 하지 않는다.
+훅은 말없이 **가리지** 않는다. 이미 있는 `core.hooksPath`(로컬·전역)도, `.git/hooks` 에서 돌고 있는 훅도
+기본으로는 덮거나 가리지 않고, `--override-hooks` 를 줄 때만 바꾼다. 가리지 않고 배선할 수 있으면 init 이
+그렇게 한다 (0.9.0) — `core.hooksPath` 를 켤 수 없는 리포에서는 git 이 실제로 pre-commit 으로 실행할 파일에
+게이트 호출을 얹는다. 그 파일이 git 디렉토리 안(`.git/hooks/pre-commit` — 추적되지 않는다)에 있거나 전역 훅이
+그것을 체인하는 경우다. 없으면 만들고, 있으면 shebang 바로 뒤에 한 블록을 넣는다 — 끝에 붙이면 `exit 0` 뒤의
+죽은 줄이 될 수 있다. **추적되는 자리**(`.husky/`·`tools/git-hooks/` 처럼 추적 파일이 있는 디렉토리), 실행 권한이
+없는 훅, sh·bash 계열이 아닌 훅, 리포 밖의 자리, 연결된 워크트리에는 쓰지 않는다 — 그때 설치는 그대로 끝내고
+종료 코드 3 과 **덧붙일 한 줄**을 낸다. 이 머신의 다른 리포에서 도는 전역 훅은 절대 고치라고 하지 않는다.
+
+`.git/hooks/` 는 `git status` 에 안 보이고 클론에 따라오지 않는다. 얹은 자리는 리포트가 파일 이름으로 말하는 것이
+유일한 가시성이고, 훅 매니저가 그 파일을 다시 만들면 얹은 줄은 조용히 사라진다. **재클론한 뒤에는** `npm i` 와
+`node node_modules/almandu-harness/module-harness-init.mjs` 두 줄이면 같은 자리에 같은 줄이 다시 간다 — init 이
+상태를 스스로 읽으므로 설치 스크립트가 필요 없다.
 
 | 코드 | 뜻 |
 |---|---|
 | 0 | 설치됐고 pre-commit 이 게이트를 부른다 |
 | 1 | 실패·거부 (도구 없음, git 아님, pnpm/yarn/bun, allow-git 충돌, npm 실패, 설치 자리 확인 실패, 설치된 게이트가 실행되지 않음) |
 | 2 | 사용법 (모르는 옵션, `<대상>` 없음, `--ref` 와 `--spec` 동시, v0.7.0 미만 태그, 절대 `--hooks-path`) |
-| 3 | 설치는 됐지만 pre-commit 이 게이트를 부르지 않는다 |
+| 3 | 설치는 됐지만 남의 것을 말없이 바꾸지 않고는 배선할 수 없다 (추적되는 남의 훅, 체인하지 않는 전역 훅, 리포 밖 `core.hooksPath`, 실행 권한 없는 훅, sh 계열이 아닌 훅, 게이트를 안 부르는 `.githooks/pre-commit` 이 이미 있음, 연결된 워크트리) |
 
 `--dry-run` 은 아무것도 쓰지 않는다 — 대상과 그 조상에 파일도 `git config` 도 `node_modules` 도 건드리지 않고
 계획과 예상 종료 코드만 낸다 (`git ls-remote` 만 네트워크를 본다).
@@ -84,7 +94,8 @@ node node_modules/almandu-harness/module-harness-init.mjs --dry-run   # 무엇�
 node node_modules/almandu-harness/module-harness-init.mjs
 ```
 
-넷을 놓는다 — `.githooks/pre-commit`(+ `core.hooksPath`), 루트 CLAUDE.md 의 계약 문단,
+다섯을 놓는다 — `.githooks/pre-commit`(+ 가리는 것이 없을 때만 `core.hooksPath`, 가려도 되면 `--override-hooks`),
+켤 수 없을 때의 배선(git 이 실제로 실행할 pre-commit — 작업 트리 밖 `.git/hooks/` 일 수 있다), 루트 CLAUDE.md 의 계약 문단,
 MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리의 어댑터, `.claude/commands/` 의 커맨드 셋(`--no-commands` 로 끈다). 이미 있는 파일은 덮어쓰지 않고,
 이미 있는 CLAUDE.md 에는 어댑터를 맨 앞에 얹는다. 두 번 돌려도 같은 상태다.
 

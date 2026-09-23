@@ -4,19 +4,20 @@ almandu-harness 를 설치한 리포에서 변경 하나를 계약 앞에 세워
 규칙의 정의는 `MODULE-schema-v1.md`, 도구의 표면은 `README.md` 가 갖는다 — 이 문서는 그 둘을 **작업 순서**로 다시 놓은 것이고, 둘과 어긋나면 그쪽이 맞다.
 이 문서는 패키지에 실리지 않는다 — 하네스 리포에서 읽는다.
 
-명령은 전부 소비 리포 루트에서 부른다 — 그래서 아래 예시는 **상대 경로**다. cwd 를 보장할 수 없는 자리(에이전트가 부르는 `.claude/commands/` 커맨드 등)는 절대 경로를 쓴다 (README 설치 절의 경로 형태 표). 0.8.0 기준이다.
+명령은 전부 소비 리포 루트에서 부른다 — 그래서 아래 예시는 **상대 경로**다. cwd 를 보장할 수 없는 자리(에이전트가 부르는 `.claude/commands/` 커맨드 등)는 절대 경로를 쓴다 (README 설치 절의 경로 형태 표). 0.9.0 기준이다.
 
 ---
 
 ## 0. 설치가 제대로 됐는지
 
-한 번만 확인한다. 여섯 줄 다 맞아야 아래 절차가 선다.
+한 번만 확인한다. 일곱 줄 다 맞아야 아래 절차가 선다.
 
 | 확인 | 명령 | 기대 |
 |---|---|---|
 | 패키지 | `ls node_modules/almandu-harness/` | `module-gate.mjs`·`loop/`·`review/`·`commands/` 가 있다 |
-| 훅 | `git config --local core.hooksPath` | `.githooks` (또는 설치 때 준 경로) |
+| 훅 | `git config --local core.hooksPath` | `.githooks` (또는 설치 때 준 경로). **비어 있는 것도 정상이다** — 전역 `core.hooksPath` 나 `.git/hooks` 의 다른 훅을 가리지 않으려고 init 이 켜지 않은 리포다. 그때는 아래 "배선" 줄을 본다 |
 | 훅 내용 | `cat .githooks/pre-commit` | `exec node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/module-gate.mjs" --staged` |
+| 배선 | 위 값이 비었으면 `cat "$(git rev-parse --git-common-dir)/hooks/pre-commit"` (전역 훅이 `.husky/pre-commit` 을 체인하면 그 파일) | `module-gate.mjs` 를 부르는 줄이 있다. 재클론·훅 매니저 재생성 뒤에는 사라진다 — init 을 다시 돌리면 같은 줄이 다시 간다 |
 | 루트 문단 | `grep "가장 깊은 MODULE.md" CLAUDE.md` | 한 줄 나온다 |
 | R14 표지 | 루트 계약의 `in` | `[[harness]] … (외부: almandu-harness …)` |
 | 커맨드 | `ls .claude/commands/` | `module-work.md`·`module-review.md`·`module-draft.md` 가 있다 |
