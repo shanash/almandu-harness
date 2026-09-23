@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync, execSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,18 +17,28 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const INIT = join(HERE, 'module-harness-init.mjs');
 const SCHEMA = join(HERE, 'MODULE-schema-v1.md');
 
-function newRepo(t) {
+// 사용자의 전역 core.hooksPath 가 새어 들어오면 mayConfig() 가 이 머신에서만 다른 답을 낸다 —
+// almandu-harness-install.test.mjs 가 이미 같은 이유로 격리한다 (D7)
+function isolatedEnv(dir, globalHooksPath) {
+  const gitconfig = join(dir, 'gitconfig');
+  writeFileSync(gitconfig, globalHooksPath ? `[core]\n\thooksPath = ${globalHooksPath}\n` : '');
+  return { ...process.env, GIT_CONFIG_GLOBAL: gitconfig, GIT_CONFIG_NOSYSTEM: '1' };
+}
+
+function newRepo(t, opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'harness-init-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const git = (cmd) => execSync(`git ${cmd}`, { cwd: dir, stdio: 'ignore' });
-  git('init -q');
+  const env = isolatedEnv(dir, opts.globalHooksPath);
+  const git = (cmd) => execSync(`git ${cmd}`, { cwd: dir, stdio: 'ignore', env });
+  git('init -q --template=');
   git('config user.email init@test');
   git('config user.name init');
-  return { dir, git, write: (rel, text) => { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); } };
+  return { dir, env, git, write: (rel, text) => { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); } };
 }
 
 function init(dir, ...args) {
-  const r = spawnSync('node', [INIT, ...args], { cwd: dir, encoding: 'utf8' });
+  const env = args.length && typeof args[args.length - 1] === 'object' ? args.pop() : isolatedEnv(dir);
+  const r = spawnSync('node', [INIT, ...args], { cwd: dir, encoding: 'utf8', env });
   return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
 
@@ -114,7 +124,7 @@ test('훅이 부르는 파일은 패키지에 실리고 bin 과 같다 — 경�
 });
 
 // ---------- 4단계(커맨드 배치)의 회귀 테스트 — init-9~init-14 ----------
-// 기존 여덟은 위에 그대로 있다. I6 이 :50 을 인용하므로 이 파일은 끝에만 는다.
+// 기존 여덟은 위에 그대로 있다. I6 이 :60 을 인용하므로 이 파일은 끝에만 는다.
 const COMMANDS = join(HERE, 'commands');
 const commandNames = () => readdirSync(COMMANDS).filter((n) => n.endsWith('.md')).sort();
 
@@ -212,4 +222,147 @@ test('소비 리포에 닿는 문서는 npx 로 부르라고 시키지 않는다
         `${rel}:${i + 1} 이 npx 로 ${hit} 를 부르라고 시킨다 — README 경로 형태 표를 따른다`);
     });
   }
+});
+
+// ---------- 5절(훅 배선)의 회귀 테스트 — design.md 6-B 7단계 ----------
+test('① 전역 훅이 체인하면 git-common-dir/hooks/pre-commit 을 만들고 설정은 켜지 않는다', (t) => {
+  const box = mkdtempSync(join(tmpdir(), 'harness-wire-'));
+  t.after(() => rmSync(box, { recursive: true, force: true }));
+  const ghooks = join(box, 'ghooks');
+  mkdirSync(ghooks, { recursive: true });
+  writeFileSync(join(ghooks, 'pre-commit'),
+    '#!/bin/sh\nif [ -x "$PWD/.git/hooks/pre-commit" ]; then "$PWD/.git/hooks/pre-commit" || exit $?; fi\n');
+  chmodSync(join(ghooks, 'pre-commit'), 0o755);
+  const r = newRepo(t, { globalHooksPath: ghooks });
+
+  const got = init(r.dir, r.env);
+  assert.equal(got.code, 0, got.out);
+  assert.match(read(r.dir, '.git/hooks/pre-commit'), /module-gate/);
+  const local = spawnSync('git', ['config', '--local', '--get', 'core.hooksPath'], { cwd: r.dir, env: r.env });
+  assert.notEqual(local.status, 0, '설정을 켜면 안 된다 — 전역 훅이 체인하는 자리에 이미 얹었다');
+});
+
+test('② 남의 .git/hooks/pre-commit — shebang 뒤에 얹고, 두 번 돌려도 한 블록이며, 원래 줄이 남는다', (t) => {
+  const r = newRepo(t);
+  mkdirSync(join(r.dir, '.git/hooks'), { recursive: true });
+  const foreign = '#!/bin/sh\necho foreign-hook\nexit 0\n';
+  writeFileSync(join(r.dir, '.git/hooks/pre-commit'), foreign);
+  chmodSync(join(r.dir, '.git/hooks/pre-commit'), 0o755);
+
+  const got = init(r.dir, r.env);
+  assert.equal(got.code, 0, got.out);
+  const text = read(r.dir, '.git/hooks/pre-commit');
+  assert.match(text, /^#!\/bin\/sh\n/);
+  assert.match(text, /module-gate/);
+  assert.match(text, /echo foreign-hook/);
+  assert.match(text, /exit 0/);
+
+  const before = text;
+  const got2 = init(r.dir, r.env);
+  assert.equal(got2.code, 0, got2.out);
+  assert.equal(read(r.dir, '.git/hooks/pre-commit'), before, '두 번째 실행에서 블록이 또 붙으면 안 된다');
+  assert.equal((before.match(/module-gate/g) || []).length, (read(r.dir, '.git/hooks/pre-commit').match(/module-gate/g) || []).length);
+});
+
+test('③ 안 쓰는 경우 — 추적된 남의 훅, 체인하지 않는 전역 훅, local-outside 는 아무것도 쓰지 않는다', (t) => {
+  // (a) 추적되는 로컬 hooksPath
+  const a = newRepo(t);
+  a.write('tools/git-hooks/pre-commit', '#!/bin/sh\nexit 0\n');
+  chmodSync(join(a.dir, 'tools/git-hooks/pre-commit'), 0o755);
+  execSync('git add -A', { cwd: a.dir, env: a.env });
+  execSync('git commit -q -m seed', { cwd: a.dir, env: a.env });
+  execSync('git config core.hooksPath tools/git-hooks', { cwd: a.dir, env: a.env });
+  const beforeA = read(a.dir, 'tools/git-hooks/pre-commit');
+  const gotA = init(a.dir, a.env);
+  assert.equal(gotA.code, 0, gotA.out);
+  assert.equal(read(a.dir, 'tools/git-hooks/pre-commit'), beforeA);
+
+  // (b) 전역 훅은 있지만 리포 안을 체인하지 않는다
+  const box = mkdtempSync(join(tmpdir(), 'harness-wire3b-'));
+  t.after(() => rmSync(box, { recursive: true, force: true }));
+  const ghooks = join(box, 'ghooks');
+  mkdirSync(ghooks, { recursive: true });
+  writeFileSync(join(ghooks, 'pre-commit'), '#!/bin/sh\necho no-chain\n');
+  chmodSync(join(ghooks, 'pre-commit'), 0o755);
+  const b = newRepo(t, { globalHooksPath: ghooks });
+  const gotB = init(b.dir, b.env);
+  assert.equal(gotB.code, 0, gotB.out);
+  assert.equal(existsSync(join(b.dir, '.git/hooks/pre-commit')), false);
+
+  // (c) local-outside — 리포 밖에 디렉토리가 생기면 안 된다
+  const c = newRepo(t);
+  const outsideDir = mkdtempSync(join(tmpdir(), 'harness-wire3c-outside-'));
+  t.after(() => rmSync(outsideDir, { recursive: true, force: true }));
+  execSync(`git config core.hooksPath ${outsideDir}`, { cwd: c.dir, env: c.env });
+  const gotC = init(c.dir, c.env);
+  assert.equal(gotC.code, 0, gotC.out);
+  assert.equal(existsSync(join(outsideDir, 'pre-commit')), false, '리포 밖에 파일을 쓰면 안 된다');
+
+  // (d) 추적되는 디렉토리에 pre-commit 만 없다 — 만들면 다음 커밋에 실려 모든 클론으로 간다 (5-B 1-a)
+  const d = newRepo(t);
+  d.write('tools/git-hooks/commit-msg', '#!/bin/sh\nexit 0\n');
+  execSync('git add -A', { cwd: d.dir, env: d.env });
+  execSync('git commit -q -m seed', { cwd: d.dir, env: d.env });
+  execSync('git config core.hooksPath tools/git-hooks', { cwd: d.dir, env: d.env });
+  const gotD = init(d.dir, d.env);
+  assert.equal(gotD.code, 0, gotD.out);
+  assert.equal(existsSync(join(d.dir, 'tools/git-hooks/pre-commit')), false, gotD.out);
+  assert.match(gotD.out, /추적되는 자리/);
+
+  // (e)·(f) 남의 .git/hooks/pre-commit 이 실행 권한이 없거나 sh 계열이 아니다 — 바이트 불변, 이유를 말한다
+  for (const [name, body, mode, why] of [
+    ['e', '#!/bin/sh\nexit 0\n', 0o644, /실행 권한이 없다/],
+    ['f', '#!/usr/bin/env python3\nraise SystemExit(0)\n', 0o755, /shebang 을 모른다/],
+  ]) {
+    const r = newRepo(t);
+    mkdirSync(join(r.dir, '.git/hooks'), { recursive: true });
+    writeFileSync(join(r.dir, '.git/hooks/pre-commit'), body);
+    chmodSync(join(r.dir, '.git/hooks/pre-commit'), mode);
+    // 644 는 git 이 안 도는 훅이라 fresh 로 읽힌다 — --no-config 로 wire() 의 거부 분기까지 가게 한다
+    const got = init(r.dir, '--no-config', r.env);
+    assert.equal(got.code, 0, got.out);
+    assert.equal(read(r.dir, '.git/hooks/pre-commit'), body, `(${name}) 남의 훅을 바꾸면 안 된다`);
+    assert.match(got.out, why, got.out);
+  }
+});
+
+test('④ --override-hooks 는 전역이 있어도 설정을 켠다', (t) => {
+  const box = mkdtempSync(join(tmpdir(), 'harness-wire4-'));
+  t.after(() => rmSync(box, { recursive: true, force: true }));
+  const ghooks = join(box, 'ghooks');
+  mkdirSync(ghooks, { recursive: true });
+  const r = newRepo(t, { globalHooksPath: ghooks });
+  const got = init(r.dir, '--override-hooks', r.env);
+  assert.equal(got.code, 0, got.out);
+  assert.equal(spawnSync('git', ['config', '--local', '--get', 'core.hooksPath'], { cwd: r.dir, env: r.env, encoding: 'utf8' }).stdout.trim(), '.githooks');
+});
+
+test('⑤ --dry-run — (가) fresh 리포는 config 계획을 낸다, (나) 남의 훅이 있으면 바이트가 안 바뀐다', (t) => {
+  const a = newRepo(t);
+  const gotA = init(a.dir, '--dry-run', a.env);
+  assert.equal(gotA.code, 0, gotA.out);
+  assert.match(gotA.out, /DRY \+ git config core\.hooksPath \.githooks/);
+  assert.doesNotMatch(gotA.out, /\.git\/hooks\/pre-commit/, '설정을 켤 리포에서 .git/hooks 배선까지 계획하면 예행연습이 거짓말을 한다');
+
+  const b = newRepo(t);
+  mkdirSync(join(b.dir, '.git/hooks'), { recursive: true });
+  const foreign = '#!/bin/sh\nexit 0\n';
+  writeFileSync(join(b.dir, '.git/hooks/pre-commit'), foreign);
+  chmodSync(join(b.dir, '.git/hooks/pre-commit'), 0o755);
+  const gotB = init(b.dir, '--dry-run', b.env);
+  assert.equal(gotB.code, 0, gotB.out);
+  assert.equal(read(b.dir, '.git/hooks/pre-commit'), foreign, '--dry-run 은 남의 훅을 바꾸면 안 된다');
+});
+
+test('⑥ husky v9 — 디스패처는 안 건드리고 .husky/pre-commit 에 배선한다', (t) => {
+  const r = newRepo(t);
+  r.write('.husky/_/pre-commit', '#!/bin/sh\n. "$(dirname "$0")/husky.sh"\nsh .husky/pre-commit\n');
+  chmodSync(join(r.dir, '.husky/_/pre-commit'), 0o755);
+  const dispatcherBefore = read(r.dir, '.husky/_/pre-commit');
+  execSync('git config core.hooksPath .husky/_', { cwd: r.dir, env: r.env });
+
+  const got = init(r.dir, r.env);
+  assert.equal(got.code, 0, got.out);
+  assert.equal(read(r.dir, '.husky/_/pre-commit'), dispatcherBefore, '디스패처의 바이트는 안 바뀐다');
+  assert.match(read(r.dir, '.husky/pre-commit'), /module-gate/);
 });

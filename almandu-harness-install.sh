@@ -40,11 +40,12 @@ else
   STALL_GUARD=0
 fi
 
-DEFAULT_REF="v0.8.0"
+DEFAULT_REF="v0.9.0"
 REPO_URL="https://github.com/shanash/almandu-harness"
 GH_BASE="github:shanash/almandu-harness"
 
-# 훅이 게이트를 부르는 형태. init 이 쓰는 훅 본문(module-harness-init.mjs:38)과 **같은 문자열**이고,
+# 훅이 게이트를 부르는 형태. init 이 쓰는 GATE 상수(module-harness-init.mjs:37)와 HOOK·CHAIN 두 형태
+# (module-harness-init.mjs:38-39)에 **같은 문자열**로 들어가고,
 # 테스트 20 이 그 동일성을 고정한다 — 이 파일 안에 이 문자열의 사본은 이것 하나뿐이어야 한다.
 # npx 가 아닌 이유: cwd 가 워크스페이스 멤버면 npm 이 localPrefix 를 워크스페이스 루트로 옮기고,
 # npm <=11 은 멤버의 node_modules/.bin 을 보지 않는다 (2026-09-21 실측: 11.17.0 실패, 12.0.2 통과).
@@ -427,38 +428,63 @@ esac
 # ---------- 훅 연결 판정 (phase 1 에서는 예측, phase 7 에서는 실측) ----------
 WIRED=0
 WIRE_NOTE=
+# 대상은 SET_CONFIG=1 이면 늘 $ROOT/$HOOK_DIR/pre-commit(설정이 켜지면 git 이 실제로 도는 자리),
+# 0 이면 3-A 의 실행될 파일 그대로다 — HOOK_STATE 마다 그 자리가 다르다
 check_wired() {
   WIRED=0
   WIRE_NOTE=
+  if [ "$SET_CONFIG" = 1 ]; then
+    if gate_hook "$ROOT/$HOOK_DIR/pre-commit"; then WIRED=1; fi
+    return 0
+  fi
   case "$HOOK_STATE" in
+    local-same|local-other)
+      if gate_hook "$ROOT/$HOOK_DIR/pre-commit"; then WIRED=1; fi ;;
+    local-outside)
+      : ;;   # 리포 밖이다 — 쓰기 가드가 거부한다. 배선 자리가 없다
     inherited)
-      if [ "$SET_CONFIG" = 1 ]; then
-        if gate_hook "$ROOT/$HOOK_DIR/pre-commit"; then WIRED=1; fi
-      elif gate_hook "$E_HP/pre-commit"; then
+      if gate_hook "$E_HP/pre-commit"; then
         WIRED=1; WIRE_NOTE="게이트: 전역 훅에서 (감지, 검증 아님)"
       elif [ -n "$GLOBAL_CHAINS" ] && gate_hook "$CHAIN_CANDIDATE"; then
         WIRED=1; WIRE_NOTE="게이트: 전역 훅이 체인하는 $CHAIN_CANDIDATE 에서 (감지, 검증 아님)"
       fi ;;
-    default-hooks)
-      if [ "$SET_CONFIG" = 1 ]; then
-        if gate_hook "$ROOT/$HOOK_DIR/pre-commit"; then WIRED=1; fi
-      elif gate_hook "$DEF_HOOK_DIR/pre-commit"; then WIRED=1; fi ;;
-    local-outside)
-      if [ "$SET_CONFIG" = 1 ] && gate_hook "$ROOT/$HOOK_DIR/pre-commit"; then WIRED=1; fi ;;
-    *)
-      if gate_hook "$ROOT/$HOOK_DIR/pre-commit"; then WIRED=1; fi ;;
+    fresh|default-hooks)
+      if gate_hook "$DEF_HOOK_DIR/pre-commit"; then WIRED=1; fi ;;
   esac
 }
 
-# 예측은 "init 이 그 자리에 훅을 만들 것인가" 를 한 칸 더 본다
+# 예측은 "init 이 그 자리에 훅을 만들거나 얹을 것인가" 를 한 칸 더 본다 — wire() 와 같은 가드다:
+# 리포 밖·추적되는 자리에서는 init 이 쓰지 않으므로 1 로 예측하지 않는다
 predict_wired() {
   check_wired
   [ "$WIRED" = 0 ] || return 0
   case "$HOOK_STATE" in
-    fresh|local-same|local-other) ;;
-    *) [ "$SET_CONFIG" = 1 ] || return 0 ;;
+    local-outside) return 0 ;;
   esac
-  [ -e "$ROOT/$HOOK_DIR/pre-commit" ] || WIRED=1
+  _predict_target="$ROOT/$HOOK_DIR/pre-commit"
+  if [ "$SET_CONFIG" != 1 ]; then
+    case "$HOOK_STATE" in
+      inherited)
+        [ -n "$GLOBAL_CHAINS" ] || return 0
+        _predict_target=$CHAIN_CANDIDATE ;;
+      fresh|default-hooks) _predict_target="$DEF_HOOK_DIR/pre-commit" ;;
+    esac
+  fi
+  case "$_predict_target" in
+    "$DEF_HOOK_DIR"/*) ;;   # git 디렉토리 안은 추적되지 않는다
+    *)
+      # 파일이 없어도 그 디렉토리에 추적 파일이 있으면 추적되는 자리다 — init 의 isTrackedPlace() 와 같은 선
+      _pdir=${_predict_target%/*}
+      if [ -n "$(git -C "$ROOT" ls-files -- "${_predict_target#"$ROOT"/}" 2>/dev/null)" ]; then return 0; fi
+      if [ "$_pdir" != "$ROOT" ] && [ -n "$(git -C "$ROOT" ls-files -- "${_pdir#"$ROOT"/}" 2>/dev/null)" ]; then return 0; fi ;;
+  esac
+  if [ ! -e "$_predict_target" ]; then WIRED=1; return 0; fi
+  # 이미 있는 남의 훅에 얹는 것은 설정을 켜지 않을 때뿐이다 — 켜면 put() 이 있는 파일을 덮지 않는다
+  [ "$SET_CONFIG" != 1 ] || return 0
+  if [ -z "$WIN" ] && [ ! -x "$_predict_target" ]; then return 0; fi
+  case "$(head -n 1 "$_predict_target")" in
+    "#!"*/sh|"#!"*"/sh "*|"#!"*/bash|"#!"*"/bash "*|"#!"*"/env sh"|"#!"*"/env sh "*|"#!"*"/env bash"|"#!"*"/env bash "*) WIRED=1 ;;
+  esac
 }
 predict_wired
 EXPECT_WIRED=$WIRED
@@ -602,18 +628,21 @@ preview_init() {
 }
 call_init() {   # $1 = run_init | preview_init
   _fn=$1
+  _ov=
+  [ "$OVERRIDE" != 1 ] || _ov=--override-hooks
+  # $_ov 는 비어 있으면 통째로 사라져야 한다 — 분할이 목적이다
+  # shellcheck disable=SC2086
   if [ "$HOOK_DIR" != ".githooks" ]; then
-    if [ "$SET_CONFIG" = 0 ]; then "$_fn" --hooks-path "$HOOK_DIR" --no-config
-    else                           "$_fn" --hooks-path "$HOOK_DIR"; fi
+    if [ "$SET_CONFIG" = 0 ]; then "$_fn" --hooks-path "$HOOK_DIR" --no-config $_ov
+    else                           "$_fn" --hooks-path "$HOOK_DIR" $_ov; fi
   else
-    if [ "$SET_CONFIG" = 0 ]; then "$_fn" --no-config
-    else                           "$_fn"; fi
+    if [ "$SET_CONFIG" = 0 ]; then "$_fn" --no-config $_ov
+    else                           "$_fn" $_ov; fi
   fi
 }
 
 if [ "$DRY" = 1 ]; then
-  # init 의 dry-run 은 config 계획을 보고하지 않는다 — 스크립트가 제 손으로 낸다
-  if [ "$SET_CONFIG" = 1 ] && [ "$L_HP" != "$HOOK_DIR" ]; then say "DRY + git config core.hooksPath $HOOK_DIR"; fi
+  # init 의 dry-run 이 이제 config 계획을 스스로 낸다 (4-A) — 여기서 다시 내지 않는다
   call_init run_init
   if [ -f "$INIT" ]; then call_init preview_init 2>&1 | sed 's/^/  /'; fi
 else
@@ -690,7 +719,11 @@ if [ "$WIRED" != 1 ]; then
       say "  core.hooksPath=$L_HP 가 리포 밖이다. --override-hooks 로 $DIR 을 쓰거나, 그 디렉토리의 pre-commit 에 직접 덧붙인다:"
       say "      $_line" ;;
     *)
-      say "  $HOOK_DIR/pre-commit 이 게이트를 부르지 않는다 (init 은 이미 있는 훅을 덮지 않는다). 이 줄을 덧붙인다:"
+      # local-other(남의 추적 훅) · local-same/fresh($HOOK_DIR/pre-commit 이 이미 있고 게이트를 안 부른다) ·
+      # init 이 비실행·낯선 shebang 이라 거부한 경우가 전부 여기로 온다 — init 은 이미 있는 훅을 덮지 않는다
+      _hf="$HOOK_DIR/pre-commit"
+      if [ "$SET_CONFIG" != 1 ] && [ "$HOOK_STATE" = fresh ]; then _hf="$DEF_HOOK_DIR/pre-commit"; fi
+      say "  $_hf 이 게이트를 부르지 않는다 (init 은 이미 있는 훅을 덮지 않았거나, 실행 권한·shebang 이 맞지 않아 거부했다). 이 줄을 덧붙인다:"
       say "      $_line" ;;
   esac
 fi

@@ -353,24 +353,25 @@ test('거부: pnpm 락, git 아님, 하네스 자신, 최상위 package.json 없
 });
 
 // ---------- 12 ----------
-test('.git/hooks 에서 돌고 있는 훅은 말없이 끄지 않는다 (exit 3)', { skip: SKIP }, (t) => {
+// [B] 재정의 — .git/hooks 에 다른 훅이 있어도 core.hooksPath 는 켜지 않지만(그 훅들이 죽지 않는다),
+// git 이 지금 실제로 실행할 .git/hooks/pre-commit 자리에는 게이트를 만들어 0 으로 끝난다 (design 5-D)
+test('.git/hooks 에서 돌고 있는 훅은 그대로 두고 pre-commit 을 채운다 (exit 0)', { skip: SKIP }, (t) => {
   const f = fixture(t);
   const r = f.mk('repo');
   const hookDir = join(r.dir, '.git/hooks');
   mkdirSync(hookDir, { recursive: true });
   writeFileSync(join(hookDir, 'commit-msg'), '#!/bin/sh\nexit 0\n');
   chmodSync(join(hookDir, 'commit-msg'), 0o755);
-  const before = readdirSync(hookDir).sort().join(',');
   const beforeText = readFileSync(join(hookDir, 'commit-msg'), 'utf8');
 
   const got = install(f, r.dir);
-  assert.equal(got.code, 3, got.out);
+  assert.equal(got.code, 0, got.out);
   assert.notEqual(localHooksPath(f, r.dir).status, 0);
   assert.ok(has(r.dir, '.githooks/pre-commit'));
-  assert.equal(readdirSync(hookDir).sort().join(','), before);
+  assert.equal(readdirSync(hookDir).sort().join(','), 'commit-msg,pre-commit');
   assert.equal(readFileSync(join(hookDir, 'commit-msg'), 'utf8'), beforeText);
+  assert.match(read(r.dir, '.git/hooks/pre-commit'), /module-gate/);
   assert.match(got.out, /commit-msg/);
-  assert.match(got.out, /module-gate\.mjs" --staged \|\| exit \$\?/);
 
   const over = install(f, r.dir, '--override-hooks');
   assert.equal(over.code, 0, over.out);
@@ -393,15 +394,21 @@ test('전역 훅이 리포 훅을 체인하면 그 자리를 본다', { skip: SK
   writeFileSync(join(a.dir, '.git/hooks/pre-commit'),
     '#!/bin/sh\nnpx --no-install almandu-module-gate --staged || exit $?\n');
   chmodSync(join(a.dir, '.git/hooks/pre-commit'), 0o755);
+  // 예행연습 arm — 이미 게이트를 부르는 훅이라 predict_wired() 가 실제 실행 전에 0 을 미리 본다
+  const preview = install(f, a.dir, '--dry-run');
+  assert.equal(preview.code, 0, preview.out);
+  assert.match(preview.out, /종료 코드는 0 으로 예상된다/, preview.out);
   const g1 = install(f, a.dir);
   assert.equal(g1.code, 0, g1.out);
   assert.notEqual(localHooksPath(f, a.dir).status, 0);
   assert.match(g1.out, /체인/);
 
+  // [B] 재정의 — 전역 훅이 체인하는 자리에 훅 파일이 없으면 init 이 만든다. 3-B 둘째 줄과 같은 경우다
   const b = f.mk('unchained');
   const g2 = install(f, b.dir);
-  assert.equal(g2.code, 3, g2.out);
-  assert.match(g2.out, /\.git\/hooks\/pre-commit/);
+  assert.equal(g2.code, 0, g2.out);
+  assert.notEqual(localHooksPath(f, b.dir).status, 0, 'chain 자리에 얹었을 때 core.hooksPath 는 켜지 않는다');
+  assert.match(read(b.dir, '.git/hooks/pre-commit'), /module-gate/);
   assert.equal(g2.out.includes(`${ghooks}/pre-commit`), false, g2.out);
 });
 
@@ -458,7 +465,9 @@ test('allow-git 프로브가 환경변수 덮어쓰기를 잡는다', {
 });
 
 // ---------- 16 ----------
-test('--no-config 에서도 게이트를 부르는 훅이 없으면 exit 3 이다', { skip: SKIP }, (t) => {
+// [B] 재정의 — --no-config 라 core.hooksPath 는 그대로지만, 그러면 git 이 실제로 도는 자리는
+// .git/hooks/pre-commit 이고 거기는 비어 있으므로 init 이 채운다 (design 5-D)
+test('--no-config 라도 실제로 도는 자리가 비어 있으면 채운다 (exit 0), 채울 수 없으면 exit 3 이다', { skip: SKIP }, (t) => {
   const f = fixture(t);
   const a = f.mk('foreign');
   a.write('.githooks/pre-commit', '#!/bin/sh\nexit 0\n');
@@ -468,9 +477,10 @@ test('--no-config 에서도 게이트를 부르는 훅이 없으면 exit 3 이�
   const before = read(a.dir, '.githooks/pre-commit');
 
   const got = install(f, a.dir, '--no-config');
-  assert.equal(got.code, 3, got.out);
-  assert.equal(read(a.dir, '.githooks/pre-commit'), before);
-  assert.match(got.out, /module-gate\.mjs" --staged \|\| exit \$\?/);
+  assert.equal(got.code, 0, got.out);
+  assert.equal(read(a.dir, '.githooks/pre-commit'), before, '남의 .githooks/pre-commit 은 우리가 관리하는 자리가 아니라 손대지 않는다');
+  assert.match(read(a.dir, '.git/hooks/pre-commit'), /module-gate/);
+  assert.notEqual(localHooksPath(f, a.dir).status, 0, '--no-config 는 core.hooksPath 를 켜지 않는다');
 
   // 이 머신의 기본 arm 이 --no-config 쪽이다. 그 arm 에서 커맨드 꼬리가 먹는지를 여기서 고정한다
   const b = f.mk('nocmd');
@@ -662,12 +672,36 @@ test('훅 본문과 스크립트의 게이트 호출은 한 문자열이다', { 
   assert.ok(script.includes(`GATE_CALL='${call}'`), `GATE_CALL 이 훅 본문과 다르다: ${call}`);
   assert.match(script, /_line="\$GATE_CALL --staged \|\| exit \\\$\?"/);
   assert.match(script, /sh -c "\$GATE_CALL --scope \."/);
+
+  // 체인 블록 arm — 남의 .git/hooks/pre-commit 에 얹힌 줄도 같은 문자열이고, 꼬리는 스크립트의
+  // _line·GATE_CALL 과 같다 (4-C)
+  const dir2 = mkdtempSync(join(tmpdir(), 'harness-tie2-'));
+  t.after(() => rmSync(dir2, { recursive: true, force: true }));
+  spawnSync('git', ['-C', dir2, 'init', '-q', '--template=']);
+  mkdirSync(join(dir2, '.git/hooks'), { recursive: true });
+  writeFileSync(join(dir2, '.git/hooks/pre-commit'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(dir2, '.git/hooks/pre-commit'), 0o755);
+  const got2 = spawnSync('node', [join(HERE, 'module-harness-init.mjs'), '--no-config', '--no-commands'],
+    { cwd: dir2, encoding: 'utf8' });
+  assert.equal(got2.status, 0, `${got2.stdout}${got2.stderr}`);
+  const chainedLine = readFileSync(join(dir2, '.git/hooks/pre-commit'), 'utf8')
+    .split('\n').find((l) => l.endsWith('--staged || exit $?') && !l.startsWith('exec '));
+  assert.ok(chainedLine, '체인 블록이 얹히지 않았다');
+  assert.equal(chainedLine, `${call} --staged || exit $?`);
 });
 
 // ---------- 21 ----------
-// 체인 배선의 양성 대조 — 전역 훅이 리포 훅을 체인해도, 오늘의 install 은 그 자리에 아무것도
-// 얹지 않아 3 으로 끝나고 위반 커밋은 통과한다. [B] 가 이 단언을 뒤집는다
-test('전역 훅이 체인해도 오늘의 install 은 배선하지 않는다 — 위반 커밋이 통과한다 (양성 대조)', { skip: SKIP }, (t) => {
+// 체인 배선 — 전역 훅이 리포 훅을 체인하면 install 은 그 자리에 게이트를 얹고, 위반 커밋을 막는다.
+// (a) 훅이 없던 자리(exec 판 생성) (b) 남의 훅이 있던 자리(얹기, 원래 줄 보존) 둘 다 실제 커밋으로 잰다
+function violate(r, env) {
+  r.write('MODULE.md',
+    ['---', 'module: bad', 'path: elsewhere', 'schema: 1', 'status: draft', '---', '', '## 책임', 'x', ''].join('\n'));
+  r.git('add', '-A');
+  const commit = spawnSync('git', ['commit', '-q', '-m', 'violate'], { cwd: r.dir, env, encoding: 'utf8' });
+  return { code: commit.status, out: `${commit.stdout ?? ''}${commit.stderr ?? ''}` };
+}
+
+test('전역 훅이 체인하면 install 이 그 자리에 게이트를 배선해 위반 커밋을 막는다', { skip: SKIP }, (t) => {
   const f = fixture(t);
   const ghooks = join(f.box, 'ghooks');
   mkdirSync(ghooks, { recursive: true });
@@ -677,19 +711,31 @@ test('전역 훅이 체인해도 오늘의 install 은 배선하지 않는다 �
   chmodSync(join(ghooks, 'pre-commit'), 0o755);
   writeFileSync(join(f.box, 'gitconfig'), `[core]\n\thooksPath = ${ghooks}\n`);
 
-  const r = f.mk('chain-target');
-  const got = install(f, r.dir);
-  assert.equal(got.code, 3, got.out);
-  assert.equal(has(r.dir, '.git/hooks/pre-commit'), false,
-    '이 arm 은 훅이 없는 상태를 본다 — 있으면 LC 가 그것을 부른다는 뜻이라 대조가 다른 것을 잰다');
+  // (a) 훅이 없던 자리 — init 이 exec 판을 새로 만든다
+  const a = f.mk('chain-target');
+  const gotA = install(f, a.dir);
+  assert.equal(gotA.code, 0, gotA.out);
+  assert.match(read(a.dir, '.git/hooks/pre-commit'), /module-gate/);
+  const vA = violate(a, f.env);
+  assert.notEqual(vA.code, 0, vA.out);
+  assert.match(vA.out, /R0/, '커밋을 막은 것이 게이트의 판정이어야 한다');
+  assert.match(vA.out, /global-hook-ran/, '전역 훅이 돌지 않았다 — 대조 자체가 무의미하다');
 
-  // R0 를 어기는 MODULE.md 를 심고 스테이지한다 — 게이트가 돌았다면 이 커밋은 막혔을 것이다
-  r.write('MODULE.md',
-    ['---', 'module: bad', 'path: elsewhere', 'schema: 1', 'status: draft', '---', '', '## 책임', 'x', ''].join('\n'));
-  r.git('add', '-A');
-  const commit = spawnSync('git', ['commit', '-q', '-m', 'violate'], { cwd: r.dir, env: f.env, encoding: 'utf8' });
-  const commitOut = `${commit.stdout ?? ''}${commit.stderr ?? ''}`;
-  // [B] 가 이 단언을 뒤집는다 — 전역 훅이 체인하는 자리에 init 이 게이트를 얹으면 이 커밋은 막힌다
-  assert.equal(commit.status, 0, commitOut);
-  assert.match(commitOut, /global-hook-ran/, '전역 훅이 돌지 않았다 — 대조 자체가 무의미하다');
+  // (b) 남의 훅이 이미 있던 자리 — init 이 shebang 뒤에 얹는다 (게이트가 먼저 돈다). 원래 줄은 파일에 남는다
+  const b = f.mk('chain-target-existing');
+  mkdirSync(join(b.dir, '.git/hooks'), { recursive: true });
+  writeFileSync(join(b.dir, '.git/hooks/pre-commit'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(b.dir, '.git/hooks/pre-commit'), 0o755);
+  // 예행연습이 얹기를 0 으로 예측해야 한다 — predict_wired 는 wire() 와 같은 가드를 쓴다 (design 5-C)
+  const preview = install(f, b.dir, '--dry-run');
+  assert.equal(preview.code, 0, preview.out);
+  assert.equal(read(b.dir, '.git/hooks/pre-commit'), '#!/bin/sh\nexit 0\n');
+  const gotB = install(f, b.dir);
+  assert.equal(gotB.code, 0, gotB.out);
+  assert.match(read(b.dir, '.git/hooks/pre-commit'), /^exit 0$/m, '원래 줄이 파일에 남아 있어야 한다');
+  assert.match(read(b.dir, '.git/hooks/pre-commit'), /module-gate/);
+  const vB = violate(b, f.env);
+  assert.notEqual(vB.code, 0, vB.out);
+  assert.match(vB.out, /R0/, '커밋을 막은 것이 얹힌 게이트의 판정이어야 한다');
+  assert.match(vB.out, /global-hook-ran/, '전역 훅은 얹은 뒤에도 계속 돈다');
 });
