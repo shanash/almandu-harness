@@ -476,6 +476,22 @@ test('--no-config 에서도 게이트를 부르는 훅이 없으면 exit 3 이�
   const b = f.mk('nocmd');
   const g2 = install(f, b.dir, '--no-config', '--no-commands');
   assert.equal(has(b.dir, '.claude'), false, g2.out);
+
+  // 여섯째 경우 (3-C) — 설정은 켤 수 있는데(fresh) .githooks/pre-commit 이 이미 있고 게이트를 안 부른다.
+  // 리포를 따로 세운다 — [B] 에서 이 리포에 .git/hooks/pre-commit 이 생기면 첫 arm 과 상태가 섞인다
+  const sixth = f.mk('sixth');
+  sixth.write('.githooks/pre-commit', '#!/bin/sh\nexit 0\n');
+  chmodSync(join(sixth.dir, '.githooks/pre-commit'), 0o755);
+  sixth.git('add', '-A');
+  sixth.git('commit', '-q', '-m', 'seed');
+  const sixthBefore = read(sixth.dir, '.githooks/pre-commit');
+
+  const g3 = install(f, sixth.dir);
+  assert.equal(g3.code, 3, g3.out);
+  assert.equal(localHooksPath(f, sixth.dir).stdout.trim(), '.githooks', '이 경우는 우리가 config 를 켠다 — test 8 은 이 값을 재지 못한다');
+  assert.equal(read(sixth.dir, '.githooks/pre-commit'), sixthBefore);
+  assert.match(g3.out, /\.githooks\/pre-commit/, g3.out);
+  assert.match(g3.out, /module-gate\.mjs" --staged \|\| exit \$\?/, g3.out);
 });
 
 // ---------- 17 ----------
@@ -636,12 +652,44 @@ test('훅 본문과 스크립트의 게이트 호출은 한 문자열이다', { 
   const got = spawnSync('node', [join(HERE, 'module-harness-init.mjs'), '--no-config', '--no-commands'],
     { cwd: dir, encoding: 'utf8' });
   assert.equal(got.status, 0, `${got.stdout}${got.stderr}`);
-  const call = readFileSync(join(dir, '.githooks/pre-commit'), 'utf8')
-    .split('\n').find((l) => l.startsWith('exec ')).slice(5).replace(' --staged', '');
+  const hookLines = readFileSync(join(dir, '.githooks/pre-commit'), 'utf8').split('\n');
+  const execLine = hookLines.find((l) => l.startsWith('exec '));
+  assert.ok(execLine, '훅 본문에 exec 줄이 없다');
+  const call = execLine.slice(5).replace(' --staged', '');
   const script = readFileSync(SCRIPT, 'utf8');
   assert.equal(script.split(call).length - 1, 1,
     `스크립트에 훅의 호출 문자열 사본이 ${script.split(call).length - 1} 개다 — 하나(GATE_CALL)여야 한다`);
   assert.ok(script.includes(`GATE_CALL='${call}'`), `GATE_CALL 이 훅 본문과 다르다: ${call}`);
   assert.match(script, /_line="\$GATE_CALL --staged \|\| exit \\\$\?"/);
   assert.match(script, /sh -c "\$GATE_CALL --scope \."/);
+});
+
+// ---------- 21 ----------
+// 체인 배선의 양성 대조 — 전역 훅이 리포 훅을 체인해도, 오늘의 install 은 그 자리에 아무것도
+// 얹지 않아 3 으로 끝나고 위반 커밋은 통과한다. [B] 가 이 단언을 뒤집는다
+test('전역 훅이 체인해도 오늘의 install 은 배선하지 않는다 — 위반 커밋이 통과한다 (양성 대조)', { skip: SKIP }, (t) => {
+  const f = fixture(t);
+  const ghooks = join(f.box, 'ghooks');
+  mkdirSync(ghooks, { recursive: true });
+  writeFileSync(join(ghooks, 'pre-commit'),
+    '#!/bin/sh\necho global-hook-ran\n'
+    + 'if [ -x "$PWD/.git/hooks/pre-commit" ]; then "$PWD/.git/hooks/pre-commit"; exit $?; fi\n');
+  chmodSync(join(ghooks, 'pre-commit'), 0o755);
+  writeFileSync(join(f.box, 'gitconfig'), `[core]\n\thooksPath = ${ghooks}\n`);
+
+  const r = f.mk('chain-target');
+  const got = install(f, r.dir);
+  assert.equal(got.code, 3, got.out);
+  assert.equal(has(r.dir, '.git/hooks/pre-commit'), false,
+    '이 arm 은 훅이 없는 상태를 본다 — 있으면 LC 가 그것을 부른다는 뜻이라 대조가 다른 것을 잰다');
+
+  // R0 를 어기는 MODULE.md 를 심고 스테이지한다 — 게이트가 돌았다면 이 커밋은 막혔을 것이다
+  r.write('MODULE.md',
+    ['---', 'module: bad', 'path: elsewhere', 'schema: 1', 'status: draft', '---', '', '## 책임', 'x', ''].join('\n'));
+  r.git('add', '-A');
+  const commit = spawnSync('git', ['commit', '-q', '-m', 'violate'], { cwd: r.dir, env: f.env, encoding: 'utf8' });
+  const commitOut = `${commit.stdout ?? ''}${commit.stderr ?? ''}`;
+  // [B] 가 이 단언을 뒤집는다 — 전역 훅이 체인하는 자리에 init 이 게이트를 얹으면 이 커밋은 막힌다
+  assert.equal(commit.status, 0, commitOut);
+  assert.match(commitOut, /global-hook-ran/, '전역 훅이 돌지 않았다 — 대조 자체가 무의미하다');
 });
