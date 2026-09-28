@@ -14,6 +14,8 @@
 - review/personas/ — 리뷰 패킷 하나에 답 하나를 내는 질문 프롬프트 (패키지에 실린다)
 - commands/ — 소비 리포의 `.claude/commands/` 에 놓이는 커맨드 셋 (0.8.0 부터 패키지에 실린다)
 - observations/ — 게이트를 실제로 돌려 보고 남긴 관찰. 규칙이 왜 생겼는지의 출처다
+- CHANGELOG.md — 판마다 바뀐 것과 올릴 때 할 일. 패키지에 싣지 않는다 — https://github.com/shanash/almandu-harness/blob/main/CHANGELOG.md
+- LICENSE — 모든 권리 보유. 공개돼 있지만 사용 허락은 없다 (라이선스 절)
 
 ## 설치
 
@@ -81,7 +83,7 @@ curl -fsSL https://raw.githubusercontent.com/shanash/almandu-harness/<태그>/al
 리포라면 먼저 한 번 커밋해라 (스크립트가 그 경우 첫 커밋을 다음 블록의 0 번으로 낸다).**
 커맨드가 필요 없으면 `--no-commands` 를 준다. 이미 있는 파일은 덮어쓰지 않으므로 고쳐 둔 커맨드는 안전하다.
 **그 뒷면이 업그레이드다** — 커맨드 문구가 바뀐 판으로 올릴 때는 `.claude/commands/` 의 사본을 지우고
-설치 도구를 다시 돌려야 새 문구가 들어온다. `npm i` 만으로는 옛 문구가 그대로 남는다.
+설치 도구를 다시 돌려야 새 문구가 들어온다. `npm i` 만으로는 옛 문구가 그대로 남는다. 어느 판이 그런지는 CHANGELOG 의 "올릴 때 할 일" 이 판마다 적는다 (맨 위 목록의 링크).
 
 설치한 리포는 계약서에서 이 패키지를 `in [[harness]] … (외부: almandu-harness)` 로 인용한다 (R14).
 게이트는 `node_modules/` 를 걷지 않으므로 이 패키지의 계약서는 소비 리포의 판정 대상이 아니다 —
@@ -215,3 +217,9 @@ GitHub 리포 이름도 `shanash/almandu-harness` 로 바뀌었다 — 옛 이�
 3. `observations/` 를 읽는 스크립트의 경로도 옮긴다. `.git/module-loop/` 는 그대로 둔다 — 옮기면 결과 파일이 없다고 읽혀 조용히 통과한다
 4. 계약서의 R14 표지를 `(외부: almandu-harness)` 로 바꾸고 그 계약서 이력에 한 줄을 남긴다
 5. `node node_modules/almandu-harness/module-gate.mjs --staged` 가 OK 이고 `git grep "node_modules/module-harness"` 가 비었는지 확인한다
+
+## 라이선스
+
+모든 권리 보유(All rights reserved) — 전문은 `LICENSE` 다. 리포는 공개돼 있지만 사용 허락은 없다.
+GitHub 이용약관이 이미 허락하는 것(GitHub 에서 보기·포크) 밖의 사용은 저작권자의 사전 서면 허락이 필요하다.
+`package.json` 의 `license` 가 `UNLICENSED` 인 것도 같은 뜻이다.

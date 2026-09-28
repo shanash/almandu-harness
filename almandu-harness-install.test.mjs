@@ -114,11 +114,17 @@ function snapshot(dir, prefix = '') {
 }
 
 // ---------- 1 ----------
-test('DEFAULT_REF 는 package.json 버전과 같고, 문법이 선다', { skip: SKIP }, () => {
+test('DEFAULT_REF 와 CHANGELOG 맨 위 판은 package.json 버전과 같고, 문법이 선다', { skip: SKIP }, () => {
   const line = readFileSync(SCRIPT, 'utf8').split('\n').find((l) => l.startsWith('DEFAULT_REF='));
   assert.match(line, /^DEFAULT_REF="v[0-9.]+"$/);
   assert.equal(line, `DEFAULT_REF="v${PKG.version}"`,
     '버전을 올렸으면 같은 커밋에서 DEFAULT_REF 도 올린다 — 기본 ref 가 옛 태그를 가리키면 설치된 리포에 커맨드가 없다');
+  // 같은 부류의 둘째 — 판 제목도 버전을 따라간다. [Unreleased] 는 숫자가 아니라 건너뛴다.
+  // 태그와 대조하지 않는다: 버전을 올리는 커밋이 태그보다 먼저다
+  const top = readFileSync(join(HERE, 'CHANGELOG.md'), 'utf8').match(/^## \[(\d+\.\d+\.\d+)\]/m);
+  assert.ok(top, 'CHANGELOG.md 에 `## [x.y.z]` 판 제목이 하나도 없다');
+  assert.equal(top[1], PKG.version,
+    '버전을 올렸으면 같은 커밋에서 CHANGELOG 의 [Unreleased] 를 그 판 제목으로 바꾼다 — 맨 위 판이 package.json 과 다르면 올리는 사람이 읽을 절이 없다');
   assert.equal(spawnSync(BASH, ['-n', SCRIPT]).status, 0);
 });
 

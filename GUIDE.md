@@ -196,7 +196,7 @@ npm i -D github:shanash/almandu-harness#v<버전>
 
 npm 12 부터 git 의존은 기본으로 막힌다 — `.npmrc` 에 `allow-git=root` 를 둔다. 밀어 올린 태그는 옮겨지지 않으므로 같은 태그는 언제나 같은 게이트다.
 
-0.x 동안 **minor 는 호환성 파괴일 수 있다** — 이미 통과하던 계약서가 FAIL 이 되거나, 루프의 명령·종료 코드·트레일러 형식이 바뀌는 변경이 minor 로 나온다 (DESIGN.md 7절). 올리기 전에 그 버전의 `MODULE.md` 이력을 읽고, 올린 뒤에는:
+0.x 동안 **minor 는 호환성 파괴일 수 있다** — 이미 통과하던 계약서가 FAIL 이 되거나, 루프의 명령·종료 코드·트레일러 형식이 바뀌는 변경이 minor 로 나온다 (DESIGN.md 7절). 올리기 전에 `CHANGELOG.md` 에서 지금 판 다음부터 올릴 판까지의 절을 읽는다 — 판마다 "올릴 때 할 일" 이 아래 2·3단계가 필요한지와 그 밖에 할 것(훅·배선)을 적고, 왜 바뀌었는지는 그 절이 가리키는 `MODULE.md` 이력에 있다. 올린 뒤에는:
 
 1. `node node_modules/almandu-harness/module-gate.mjs --audit` 으로 전수 확인
 2. 커맨드 문구가 바뀐 버전이면 `.claude/commands/` 의 사본을 지우고 설치 도구를 다시 돌린다 — 있는 파일은 덮지 않으므로 지워야 새 문구가 들어온다. 내려진 페르소나가 있으면 사본에서도 뺀다
