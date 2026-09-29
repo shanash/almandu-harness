@@ -224,7 +224,7 @@ test('소비 리포에 닿는 문서는 npx 로 부르라고 시키지 않는다
   }
 });
 
-// ---------- 5절(훅 배선)의 회귀 테스트 — design.md 6-B 7단계 ----------
+// ---------- 5절(훅 배선)의 회귀 테스트 — DESIGN.md 7절 배선 자리 ----------
 test('① 전역 훅이 체인하면 git-common-dir/hooks/pre-commit 을 만들고 설정은 켜지 않는다', (t) => {
   const box = mkdtempSync(join(tmpdir(), 'harness-wire-'));
   t.after(() => rmSync(box, { recursive: true, force: true }));
@@ -298,7 +298,7 @@ test('③ 안 쓰는 경우 — 추적된 남의 훅, 체인하지 않는 전역
   assert.equal(gotC.code, 0, gotC.out);
   assert.equal(existsSync(join(outsideDir, 'pre-commit')), false, '리포 밖에 파일을 쓰면 안 된다');
 
-  // (d) 추적되는 디렉토리에 pre-commit 만 없다 — 만들면 다음 커밋에 실려 모든 클론으로 간다 (5-B 1-a)
+  // (d) 추적되는 디렉토리에 pre-commit 만 없다 — 만들면 다음 커밋에 실려 모든 클론으로 간다 (배선 자리 4)
   const d = newRepo(t);
   d.write('tools/git-hooks/commit-msg', '#!/bin/sh\nexit 0\n');
   execSync('git add -A', { cwd: d.dir, env: d.env });

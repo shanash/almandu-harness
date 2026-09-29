@@ -360,7 +360,7 @@ test('거부: pnpm 락, git 아님, 하네스 자신, 최상위 package.json 없
 
 // ---------- 12 ----------
 // [B] 재정의 — .git/hooks 에 다른 훅이 있어도 core.hooksPath 는 켜지 않지만(그 훅들이 죽지 않는다),
-// git 이 지금 실제로 실행할 .git/hooks/pre-commit 자리에는 게이트를 만들어 0 으로 끝난다 (design 5-D)
+// git 이 지금 실제로 실행할 .git/hooks/pre-commit 자리에는 게이트를 만들어 0 으로 끝난다 (MODULE.md 이력 2026-09-23 [B])
 test('.git/hooks 에서 돌고 있는 훅은 그대로 두고 pre-commit 을 채운다 (exit 0)', { skip: SKIP }, (t) => {
   const f = fixture(t);
   const r = f.mk('repo');
@@ -472,7 +472,7 @@ test('allow-git 프로브가 환경변수 덮어쓰기를 잡는다', {
 
 // ---------- 16 ----------
 // [B] 재정의 — --no-config 라 core.hooksPath 는 그대로지만, 그러면 git 이 실제로 도는 자리는
-// .git/hooks/pre-commit 이고 거기는 비어 있으므로 init 이 채운다 (design 5-D)
+// .git/hooks/pre-commit 이고 거기는 비어 있으므로 init 이 채운다 (MODULE.md 이력 2026-09-23 [B])
 test('--no-config 라도 실제로 도는 자리가 비어 있으면 채운다 (exit 0), 채울 수 없으면 exit 3 이다', { skip: SKIP }, (t) => {
   const f = fixture(t);
   const a = f.mk('foreign');
@@ -493,7 +493,7 @@ test('--no-config 라도 실제로 도는 자리가 비어 있으면 채운다 (
   const g2 = install(f, b.dir, '--no-config', '--no-commands');
   assert.equal(has(b.dir, '.claude'), false, g2.out);
 
-  // 여섯째 경우 (3-C) — 설정은 켤 수 있는데(fresh) .githooks/pre-commit 이 이미 있고 게이트를 안 부른다.
+  // 여섯째 경우 (README 종료 코드 3) — 설정은 켤 수 있는데(fresh) .githooks/pre-commit 이 이미 있고 게이트를 안 부른다.
   // 리포를 따로 세운다 — [B] 에서 이 리포에 .git/hooks/pre-commit 이 생기면 첫 arm 과 상태가 섞인다
   const sixth = f.mk('sixth');
   sixth.write('.githooks/pre-commit', '#!/bin/sh\nexit 0\n');
@@ -732,7 +732,7 @@ test('전역 훅이 체인하면 install 이 그 자리에 게이트를 배선�
   mkdirSync(join(b.dir, '.git/hooks'), { recursive: true });
   writeFileSync(join(b.dir, '.git/hooks/pre-commit'), '#!/bin/sh\nexit 0\n');
   chmodSync(join(b.dir, '.git/hooks/pre-commit'), 0o755);
-  // 예행연습이 얹기를 0 으로 예측해야 한다 — predict_wired 는 wire() 와 같은 가드를 쓴다 (design 5-C)
+  // 예행연습이 얹기를 0 으로 예측해야 한다 — predict_wired 는 wire() 와 같은 가드를 쓴다 (DESIGN.md 7절 배선 자리)
   const preview = install(f, b.dir, '--dry-run');
   assert.equal(preview.code, 0, preview.out);
   assert.equal(read(b.dir, '.git/hooks/pre-commit'), '#!/bin/sh\nexit 0\n');

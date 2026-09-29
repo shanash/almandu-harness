@@ -26,10 +26,11 @@
 - `LICENSE` 가 패키지에 실린다 — 모든 권리 보유, 사용 허락 없음 (README 라이선스 절). `package.json` 의 `license` 는 그대로 `UNLICENSED` 다
 - 내려진 페르소나 두 파일(`review/personas/contract-checker.md`·`scope-watcher.md`) 맨 위에 묘비 한 줄이 붙었다. 질문 본문은 그대로다
 - 이 파일이 생겼다 (리포에만 있다)
+- `module-harness-init.mjs` 의 주석 세 줄이 근거로 패키지에 없던 작업 로그 대신 `DESIGN.md` 7절을 가리킨다. 동작은 그대로다
 
 올릴 때 할 일: **없음**
 
-사유: `MODULE.md` 이력 2026-09-28 (묘비 · LICENSE 와 CHANGELOG)
+사유: `MODULE.md` 이력 2026-09-28 (묘비 · LICENSE 와 CHANGELOG), 2026-09-29 (AlMandu 파이프라인에서 끊기)
 
 ## [0.10.0] — 2026-09-23
 

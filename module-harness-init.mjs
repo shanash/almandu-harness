@@ -129,7 +129,7 @@ else if (dryRun) console.log('\n--dry-run: 아무것도 쓰지 않았다');
 else console.log('\n다음: 모듈마다 MODULE.md 를 쓰고 `node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/module-gate.mjs"` 로 확인한다 (MODULE-schema-v1.md 가 규칙서다)');
 
 // ---------- 5. 훅 배선 ----------
-// git 이 pre-commit 으로 실제로 실행할 파일이 무엇인지는 git 의 규칙이라 추측이 아니다 (design 3-A).
+// git 이 pre-commit 으로 실제로 실행할 파일이 무엇인지는 git 의 규칙이라 추측이 아니다 (DESIGN.md 7절 배선 자리).
 // mayConfig() 는 그 자리를 가리지 않을 때만 core.hooksPath 를 켠다. wire() 는 켤 수 없을 때
 // 그 실제 실행 파일에 게이트 호출을 얹는다 — 작업 트리 안·비추적일 때만.
 // args 는 이미 초기화돼 있다 (:15) — 여기서 상수로 다시 두면 :67 의 TDZ 를 깨므로 함수 안에서 읽는다
@@ -171,7 +171,7 @@ function isTracked(relPath) {
   try { execFileSync('git', ['ls-files', '--error-unmatch', '--', relPath], { cwd: root, stdio: 'ignore' }); return true; }
   catch { return false; }
 }
-// 파일이 아직 없어도 그 디렉토리에 추적 파일이 있으면 추적되는 자리다 — 거기 만든 훅은 다음 커밋에 실린다 (design 5-B 1-a)
+// 파일이 아직 없어도 그 디렉토리에 추적 파일이 있으면 추적되는 자리다 — 거기 만든 훅은 다음 커밋에 실린다 (DESIGN.md 7절 배선 자리 4)
 function isTrackedPlace(full) {
   if (!relative(gitCommonDir(), full).startsWith('..')) return false;   // git 디렉토리 안은 추적되지 않는다
   const rel = toPosix(relative(root, full));
@@ -233,7 +233,7 @@ function wire() {
     return;
   }
 
-  // 설정을 켰다면(dry-run 에서는 켤 것이라면) git 이 도는 자리는 put() 이 관리하는 hooksPath 다 (design 5-B 2)
+  // 설정을 켰다면(dry-run 에서는 켤 것이라면) git 이 도는 자리는 put() 이 관리하는 hooksPath 다 (DESIGN.md 7절 배선 자리 2)
   if (!noConfig && mayConfig()) return;
   const st = hookState();
   if (st.kind === 'local-same') return;

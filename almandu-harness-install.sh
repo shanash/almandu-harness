@@ -429,7 +429,7 @@ esac
 WIRED=0
 WIRE_NOTE=
 # 대상은 SET_CONFIG=1 이면 늘 $ROOT/$HOOK_DIR/pre-commit(설정이 켜지면 git 이 실제로 도는 자리),
-# 0 이면 3-A 의 실행될 파일 그대로다 — HOOK_STATE 마다 그 자리가 다르다
+# 0 이면 DESIGN.md 7절 배선 자리의 실행될 파일 그대로다 — HOOK_STATE 마다 그 자리가 다르다
 check_wired() {
   WIRED=0
   WIRE_NOTE=
