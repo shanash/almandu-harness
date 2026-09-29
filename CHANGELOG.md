@@ -6,7 +6,7 @@
 - 이 파일은 리포에만 있다 — 패키지에는 실리지 않는다. 날짜는 태그를 찍은 날(KST)이다
 - 밀어 올린 태그는 옮기지 않는다. 고칠 것이 생기면 다음 판이 받는다
 - 0.x 동안 minor 는 호환성 파괴일 수 있다 (DESIGN.md 7절 버전 표)
-- **게이트 규칙을 조인 판은 아직 없다.** `module-gate.mjs` 는 v0.3.0 뒤로 [Unreleased] 에서 처음 바뀌었고 그것도 규칙이
+- **게이트 규칙을 조인 판은 아직 없다.** `module-gate.mjs` 는 v0.3.0 뒤로 0.11.0 에서 처음 바뀌었고 그것도 규칙이
   아니라 계약을 **찾는** 방법이다. v0.3.0 앞에서 는 것은 모드(`--json`·`--scope`·`--review`)뿐이다. 이미 통과하던 계약서가 FAIL 이 된 판은 0.7.0 하나다 — 규칙이 아니라
   패키지 이름이 바뀌어 옛 R14 표지가 설치 목록과 어긋난다 (그 판의 **이전**)
 - 0.1.0·0.2.0 은 `package.json` 버전으로만 있었다 — 태그가 없어 태그로 설치할 수 없다
@@ -24,6 +24,8 @@
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-09-29
+
 - `LICENSE` 가 패키지에 실린다 — 모든 권리 보유, 사용 허락 없음 (README 라이선스 절). `package.json` 의 `license` 는 그대로 `UNLICENSED` 다
 - 내려진 페르소나 두 파일(`review/personas/contract-checker.md`·`scope-watcher.md`) 맨 위에 묘비 한 줄이 붙었다. 질문 본문은 그대로다
 - 이 파일이 생겼다 (리포에만 있다)
@@ -33,7 +35,7 @@
 
 올릴 때 할 일: **스킬**
 
-사유: `MODULE.md` 이력 2026-09-28 (묘비 · LICENSE 와 CHANGELOG), 2026-09-29 (AlMandu 파이프라인에서 끊기 · 입구 스킬 · 계약을 무시 규칙으로 찾기)
+사유: `MODULE.md` 이력 2026-09-28 (묘비 · LICENSE 와 CHANGELOG), 2026-09-29 (AlMandu 파이프라인에서 끊기 · 입구 스킬 · 계약을 무시 규칙으로 찾기 · 0.11.0) · DESIGN.md 7절 버전 (1.0 을 보지 않은 것)
 
 ## [0.10.0] — 2026-09-23
 
@@ -141,7 +143,8 @@
 
 사유: `MODULE.md` 이력 2026-09-12 (npm 패키지가 됐다)
 
-[Unreleased]: https://github.com/shanash/almandu-harness/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/shanash/almandu-harness/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/shanash/almandu-harness/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/shanash/almandu-harness/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/shanash/almandu-harness/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/shanash/almandu-harness/compare/v0.7.0...v0.8.0

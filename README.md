@@ -13,7 +13,7 @@
 - loop/ — 변경을 계약 앞에 세우는 루프 (0.6.0 부터 `loop.mjs` 가 bin `almandu-module-loop` 으로 패키지에 실린다)
 - review/personas/ — 리뷰 패킷 하나에 답 하나를 내는 질문 프롬프트 (패키지에 실린다)
 - commands/ — 소비 리포의 `.claude/commands/` 에 놓이는 커맨드 셋 (0.8.0 부터 패키지에 실린다)
-- skills/ — 소비 리포의 `.claude/skills/` 에 놓이는 입구 스킬 `module-loop`. 절차를 담지 않고 `/module-work` 를 부른다 (다음 판부터 실린다)
+- skills/ — 소비 리포의 `.claude/skills/` 에 놓이는 입구 스킬 `module-loop`. 절차를 담지 않고 `/module-work` 를 부른다 (0.11.0 부터 패키지에 실린다)
 - observations/ — 게이트를 실제로 돌려 보고 남긴 관찰. 규칙이 왜 생겼는지의 출처다
 - CHANGELOG.md — 판마다 바뀐 것과 올릴 때 할 일. 패키지에 싣지 않는다 — https://github.com/shanash/almandu-harness/blob/main/CHANGELOG.md
 - LICENSE — 모든 권리 보유. 공개돼 있지만 사용 허락은 없다 (라이선스 절)

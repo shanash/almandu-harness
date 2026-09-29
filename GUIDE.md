@@ -14,7 +14,7 @@ almandu-harness 를 설치한 리포에서 변경 하나를 계약 앞에 세워
 
 | 확인 | 명령 | 기대 |
 |---|---|---|
-| 패키지 | `ls node_modules/almandu-harness/` | `module-gate.mjs`·`loop/`·`review/`·`commands/` 가 있다 (0.10.0 다음 판부터 `skills/` 도) |
+| 패키지 | `ls node_modules/almandu-harness/` | `module-gate.mjs`·`loop/`·`review/`·`commands/` 가 있다 (0.11.0 부터 `skills/` 도) |
 | 훅 | `git config --local core.hooksPath` | `.githooks` (또는 설치 때 준 경로). **비어 있는 것도 정상이다** — 전역 `core.hooksPath` 나 `.git/hooks` 의 다른 훅을 가리지 않으려고 init 이 켜지 않은 리포다. 그때는 아래 "배선" 줄을 본다 |
 | 훅 내용 | `cat .githooks/pre-commit` | `exec node "$(git rev-parse --show-toplevel)/node_modules/almandu-harness/module-gate.mjs" --staged` |
 | 배선 | 위 값이 비었으면 `cat "$(git rev-parse --git-common-dir)/hooks/pre-commit"` (전역 훅이 `.husky/pre-commit` 을 체인하면 그 파일) | `module-gate.mjs` 를 부르는 줄이 있다. 재클론·훅 매니저 재생성 뒤에는 사라진다 — init 을 다시 돌리면 같은 줄이 다시 간다 |
@@ -22,7 +22,7 @@ almandu-harness 를 설치한 리포에서 변경 하나를 계약 앞에 세워
 | R14 표지 | 루트 계약의 `in` | `[[harness]] … (외부: almandu-harness …)` |
 | 커맨드 | `ls .claude/commands/` | `module-work.md`·`module-review.md`·`module-draft.md` 가 있다 |
 
-0.10.0 다음 판부터는 `ls .claude/skills/` 에 `module-loop/` 도 있다 — 파일을 바꾸는 작업을 맡기면 `/module-work` 를 치지 않아도 에이전트가 그 절차로 들어가게 하는 입구다. 없어도 아래 절차는 선다. `/module-work` 를 쳐야 할 뿐이다.
+0.11.0 부터는 `ls .claude/skills/` 에 `module-loop/` 도 있다 — 파일을 바꾸는 작업을 맡기면 `/module-work` 를 치지 않아도 에이전트가 그 절차로 들어가게 하는 입구다. 없어도 아래 절차는 선다. `/module-work` 를 쳐야 할 뿐이다.
 
 하나라도 빠졌으면 `node node_modules/almandu-harness/module-harness-init.mjs --dry-run` 으로 무엇이 놓일지 보고 `--dry-run` 을 빼고 다시 돌린다. 이미 있는 파일은 덮어쓰지 않으므로 몇 번 돌려도 된다.
 

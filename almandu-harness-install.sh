@@ -40,7 +40,7 @@ else
   STALL_GUARD=0
 fi
 
-DEFAULT_REF="v0.10.0"
+DEFAULT_REF="v0.11.0"
 REPO_URL="https://github.com/shanash/almandu-harness"
 GH_BASE="github:shanash/almandu-harness"
 
