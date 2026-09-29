@@ -918,3 +918,25 @@ test('--review 는 불변식 하나뿐인 계약서를 판정 불가로 세지 �
   r.commit();
   assert.deepEqual(JSON.parse(gate(r.dir, '--review', '--json').out).unjudgeable, []);
 });
+
+test('계약은 리포의 무시 규칙으로 찾는다 — 무시된 자리의 사본은 빠지고, 추적된 자리는 디렉토리 이름과 무관하게 든다', (t) => {
+  const r = newRepo(t);
+  putModule(r.dir, { slug: 'alpha', path: 'alpha' });
+  putModule(r.dir, { slug: 'lib', path: 'src/Library' });                 // 옛 이름 목록이 말없이 거르던 자리
+  write(r.dir, '.gitignore', 'Intermediate/\n.venv*/\n');
+  putModule(r.dir, { slug: 'ghost', path: 'client/Intermediate/gen' });   // Unreal 산출물 (hwatu 모양)
+  putModule(r.dir, { slug: 'pkg', path: '.venv311/lib/pkg' });            // 가상환경 (kod 모양)
+  r.commit();
+  const owner = (p) => JSON.parse(gate(r.dir, '--scope', p, '--json').out).paths[0].owner;
+  assert.equal(owner('src/Library/a.cs'), 'lib');
+  assert.equal(owner('client/Intermediate/gen/a.h'), null);
+  assert.equal(owner('.venv311/lib/pkg/a.py'), null);
+  // 패스스펙(`*/MODULE.md`)으로 거르면 이 변수 하나에 중첩 계약이 전부 빠진다 — 켜져 있어도 같은 답이어야 한다
+  const env = { ...process.env, GIT_LITERAL_PATHSPECS: '1' };
+  assert.equal(JSON.parse(execFileSync('node', [GATE, '--json'], { cwd: r.dir, encoding: 'utf8', env })).modules, 2);
+  // 작업 트리에서만 지운 계약은 인덱스에 남아 있어도 읽을 수 없다 — 죽지 않고 뺀다
+  rmSync(join(r.dir, 'alpha/MODULE.md'));
+  const after = gate(r.dir, '--json');
+  assert.equal(after.code, 0, after.out);
+  assert.equal(JSON.parse(after.out).modules, 1);
+});

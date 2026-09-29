@@ -10,7 +10,7 @@
 //       npx module-gate --review   (판정하지 않는다: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그)
 // 종료 코드: FAIL 1개 이상이면 1
 import { execFileSync, execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative, dirname, resolve } from 'node:path';
 
 const args = process.argv.slice(2);
@@ -32,7 +32,7 @@ const baseIdx = args.indexOf('--base');
 const base = baseIdx >= 0 ? args[baseIdx + 1] : 'HEAD';
 const mode = scopeArgs ? 'scope' : review ? 'review' : audit ? 'audit' : staged ? 'staged' : baseIdx >= 0 ? 'base' : 'worktree';
 const MAX_LINES = 80;
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'Library', 'Temp', 'obj', 'Logs', 'builds']);
+const LIST_BUFFER = 1 << 30; // git ls-files 출력은 파일 수에 비례한다 — 파일 7천 개 리포가 이미 0.49MB 라 기본 1MB 로는 모자란다
 // R1 이 "코드 변경"으로 보는 것. 모듈별로 frontmatter `watch: .cs,.shader` 로 덮어쓸 수 있다
 const DEFAULT_WATCH = ['.cs', '.asmdef', '.py', '.sh', '.mjs', '.js', '.ts'];
 // watch 항목은 확장자(`.cs`) 또는 파일명·경로 꼬리(`git-hooks/pre-commit`)다. 후자를 endsWith 로만
@@ -53,15 +53,15 @@ const sh = (cmd) => execSync(cmd, { cwd: root, stdio: ['ignore', 'pipe', 'ignore
 const toPosix = (p) => p.split('\\').join('/');
 
 // ---------- MODULE.md 수집 ----------
-function findModules(dir, out = []) {
-  for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const full = join(dir, name);
-    const st = statSync(full);
-    if (st.isDirectory()) findModules(full, out);
-    else if (name === 'MODULE.md') out.push(toPosix(relative(root, full)));
-  }
-  return out;
+// 파일시스템을 걷지 않고 git 에 묻는다 — 건너뛸 자리는 리포의 무시 규칙이 이미 적고 있다. 이름 목록은 한
+// 생태계(Unity)의 모양이라 Unreal 산출물도 파이썬 가상환경도 걷고 있었다 (observations/06).
+// 패스스펙(`*/MODULE.md`)으로 거르지 않는다 — GIT_LITERAL_PATHSPECS 하나에 중첩 계약이 전부 빠진다
+function findModules() {
+  const listed = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+    { cwd: root, maxBuffer: LIST_BUFFER }).toString().split('\0');
+  // 충돌 중에는 한 경로가 단계마다 나오고, 작업 트리에서만 지운 계약은 인덱스에 남아도 읽을 수 없다
+  return [...new Set(listed)].filter((p) =>
+    (p === 'MODULE.md' || p.endsWith('/MODULE.md')) && existsSync(join(root, p)));
 }
 
 function parseModule(relPath, text) {
@@ -110,7 +110,7 @@ function parseModule(relPath, text) {
   };
 }
 
-const modules = findModules(root).map((p) => parseModule(p, readFileSync(join(root, p), 'utf8')));
+const modules = findModules().map((p) => parseModule(p, readFileSync(join(root, p), 'utf8')));
 const bySlug = new Map(modules.map((m) => [m.fm.module, m]));
 
 // 파일이 이 모듈의 소유 범위 안인가. ownerOf 와 --scope 가 같은 답을 내야 하므로 한 곳에 둔다
@@ -147,7 +147,7 @@ if (scopeArgs) {
 // ---------- 변경 파일 ----------
 const diffCmd = staged ? 'git diff --cached --name-only' : `git diff --name-only ${base}`;
 const untrackedAll = sh('git ls-files --others --exclude-standard');
-// --staged 에서도 untracked MODULE.md 는 "변경됨" 으로 센다. findModules 는 파일시스템을 걷는데
+// --staged 에서도 untracked MODULE.md 는 "변경됨" 으로 센다. findModules 는 untracked 계약도 찾는데
 // diff 만 인덱스를 보면, 방금 쓴 계약서를 R1 이 "미변경" 이라고 답하고 R2 는 아예 돌지 않는다.
 // untracked 파일은 커밋에 아직 없으니 내용 전체가 변경이다. 소스는 그대로 제외 — staged 가
 // 아닌 .cs 는 실제로 커밋에 안 들어간다

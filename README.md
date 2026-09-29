@@ -90,8 +90,8 @@ curl -fsSL https://raw.githubusercontent.com/shanash/almandu-harness/<태그>/al
 설치 도구를 다시 돌려야 새 문구가 들어온다. `npm i` 만으로는 옛 문구가 그대로 남는다. 어느 판이 그런지는 CHANGELOG 의 "올릴 때 할 일" 이 판마다 적는다 (맨 위 목록의 링크).
 
 설치한 리포는 계약서에서 이 패키지를 `in [[harness]] … (외부: almandu-harness)` 로 인용한다 (R14).
-게이트는 `node_modules/` 를 걷지 않으므로 이 패키지의 계약서는 소비 리포의 판정 대상이 아니다 —
-그쪽 계약은 이 리포에서 판정된다.
+게이트는 git 이 무시하는 자리의 MODULE.md 를 계약으로 세지 않고 `node_modules/` 는 무시되므로(설치 스크립트가 맞춘다)
+이 패키지의 계약서는 소비 리포의 판정 대상이 아니다 — 그쪽 계약은 이 리포에서 판정된다.
 
 설치한 뒤 한 번 돌린다:
 
@@ -138,7 +138,7 @@ node node_modules/almandu-harness/module-gate.mjs --audit             # diff 무
 node node_modules/almandu-harness/module-gate.mjs --json              # 같은 판정을 기계 판독 형태로 (stdout 전용)
 node node_modules/almandu-harness/module-gate.mjs --scope <경로>...   # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
 node node_modules/almandu-harness/module-gate.mjs --review            # 판정 안 함: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그
-npm test                                                 # 회귀 테스트 145개, ~77초 (2026-09-29 실측)
+npm test                                                 # 회귀 테스트 147개, ~83초 (2026-09-29 실측)
 ```
 
 이름 해석에 기대는 실행기는 어디서도 쓰지 않는다 — `almandu-*` 이름은 npm 에 올라가 있지 않아서, 로컬 설치가

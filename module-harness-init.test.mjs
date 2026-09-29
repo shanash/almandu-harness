@@ -421,3 +421,14 @@ test('스킬은 입구일 뿐이다 — 이름이 디렉토리와 같고, 부르
         `${rel} 이 가리키는 ${p} 가 패키지에 실리지 않는다`);
   }
 });
+
+test('어댑터를 놓을 계약은 게이트와 같이 무시 규칙으로 찾는다 — 무시된 자리에는 쓰지 않는다', (t) => {
+  const r = newRepo(t);
+  r.write('src/Library/MODULE.md', '---\nmodule: lib\n---\n');           // 옛 이름 목록이 말없이 거르던 자리
+  r.write('.gitignore', '.venv*/\n');
+  r.write('.venv311/lib/pkg/MODULE.md', '---\nmodule: pkg\n---\n');       // 무시된 가상환경 안의 사본
+  const got = init(r.dir);
+  assert.equal(got.code, 0, got.out);
+  assert.equal(existsSync(join(r.dir, 'src/Library/CLAUDE.md')) && read(r.dir, 'src/Library/CLAUDE.md'), adapterFromSchema());
+  assert.equal(existsSync(join(r.dir, '.venv311/lib/pkg/CLAUDE.md')), false);
+});

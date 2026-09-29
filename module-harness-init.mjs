@@ -19,7 +19,7 @@ const hpIdx = args.indexOf('--hooks-path');
 const hooksPath = hpIdx < 0 ? '.githooks' : args[hpIdx + 1];
 if (!hooksPath || hooksPath.startsWith('--')) { console.error('init: --hooks-path 에 디렉토리가 필요하다'); process.exit(2); }
 
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'Library', 'Temp', 'obj', 'Logs', 'builds']);
+const LIST_BUFFER = 1 << 30; // git ls-files 출력의 상한 — 게이트와 같은 값이고 이유도 그쪽 주석과 같다
 const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
 const toPosix = (p) => p.split('\\').join('/');
 
@@ -84,17 +84,17 @@ else if (!dryRun) { writeFileSync(rootAdapter, readFileSync(rootAdapter, 'utf8')
 else done.push('CLAUDE.md — 계약 문단 추가');
 
 // ---------- 3. 모듈마다 어댑터 ----------
-function findModules(dir, out = []) {
-  for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const full = join(dir, name);
-    if (statSync(full).isDirectory()) findModules(full, out);
-    else if (name === 'MODULE.md') out.push(toPosix(relative(root, dirname(full))));
-  }
-  return out;
+// 게이트의 findModules 와 같은 답을 낸다 — 건너뛸 자리는 이름 목록이 아니라 리포의 무시 규칙이다 (그쪽 주석)
+function findModules() {
+  const listed = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+    { cwd: root, encoding: 'utf8', maxBuffer: LIST_BUFFER }).split('\0');
+  // 충돌 중에는 한 경로가 단계마다 나오고, 작업 트리에서만 지운 계약은 인덱스에 남아도 읽을 수 없다
+  return [...new Set(listed)]
+    .filter((p) => (p === 'MODULE.md' || p.endsWith('/MODULE.md')) && existsSync(join(root, p)))
+    .map((p) => (p === 'MODULE.md' ? '' : p.slice(0, -'/MODULE.md'.length)));
 }
 const adapter = adapterText();
-for (const dir of findModules(root)) {
+for (const dir of findModules()) {
   const rel = dir ? `${dir}/CLAUDE.md` : 'CLAUDE.md';
   const full = join(root, rel);
   if (!existsSync(full)) { put(rel, adapter); continue; }
