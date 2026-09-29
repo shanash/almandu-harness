@@ -3,3 +3,6 @@ node_modules/
 # 도구가 만드는 사본 — 커맨드·어댑터의 원본은 .claude/ 와 CLAUDE.md 다
 .agents/
 AGENTS.md
+
+# 전역 무시 목록이 없는 클론에서도 막는다 — loop commit 은 git add -A 다
+.DS_Store
