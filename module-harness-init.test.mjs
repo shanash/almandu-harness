@@ -182,16 +182,16 @@ test('commands/ 가 없는 배치에서도 죽지 않는다 (0.8.0 미만 태그
   assert.equal(existsSync(join(r.dir, '.claude')), false);
 });
 
-test('실리는 커맨드에 리포 고유 경로가 없다', () => {
+test('실리는 커맨드·스킬에 리포 고유 경로가 없다', () => {
   // 하네스를 갓 설치한 임의의 리포에서 거짓이거나 해소되지 않는 경로들이다
   const forbidden = [/node loop\/loop\.mjs/, /\.\.\/module-harness\//, /tools\/git-hooks/, /restored-project\//];
-  for (const name of commandNames()) {
-    const text = readFileSync(join(COMMANDS, name), 'utf8');
-    for (const re of forbidden) assert.equal(re.test(text), false, `${name} 에 ${re} 가 남아 있다`);
+  for (const rel of [...commandNames().map((n) => `commands/${n}`), ...skillFiles()]) {
+    const text = readFileSync(join(HERE, rel), 'utf8');
+    for (const re of forbidden) assert.equal(re.test(text), false, `${rel} 에 ${re} 가 남아 있다`);
     for (const line of text.split('\n'))
       if (line.includes('review/personas/'))
         assert.match(line, /node_modules\/almandu-harness\/review\/personas\//,
-          `${name}: 접두사 없는 review/personas/ — ${line}`);
+          `${rel}: 접두사 없는 review/personas/ — ${line}`);
   }
 });
 
@@ -213,7 +213,7 @@ test('소비 리포에 닿는 문서는 npx 로 부르라고 시키지 않는다
   // 처방이 아닌 자리는 밖이다 — 이력·설계, 그리고 bin 을 세기만 하는 MODULE.md 진입점 칸이 그렇다
   const bins = Object.keys(JSON.parse(readFileSync(join(HERE, 'package.json'), 'utf8')).bin);
   const watched = ['README.md', 'GUIDE.md', 'MODULE-schema-v1.md',
-    ...commandNames().map((n) => `commands/${n}`)];
+    ...commandNames().map((n) => `commands/${n}`), ...skillFiles()];
   for (const rel of watched) {
     readFileSync(join(HERE, rel), 'utf8').split('\n').forEach((line, i) => {
       if (!line.includes('npx')) return;
@@ -365,4 +365,59 @@ test('⑥ husky v9 — 디스패처는 안 건드리고 .husky/pre-commit 에 �
   assert.equal(got.code, 0, got.out);
   assert.equal(read(r.dir, '.husky/_/pre-commit'), dispatcherBefore, '디스패처의 바이트는 안 바뀐다');
   assert.match(read(r.dir, '.husky/pre-commit'), /module-gate/);
+});
+
+// ---------- 스킬 배치의 회귀 테스트 — 스킬은 커맨드의 입구다 ----------
+// 함수 선언이라 끌어올려진다 — 위의 경로·npx 검사 둘이 이것으로 실리는 스킬까지 본다
+function skillFiles() {
+  const dir = join(HERE, 'skills');
+  return readdirSync(dir).flatMap((name) =>
+    readdirSync(join(dir, name)).filter((f) => f.endsWith('.md')).map((f) => `skills/${name}/${f}`)).sort();
+}
+
+test('스킬을 .claude/skills 에 놓고, 놓인 것은 원본과 바이트 단위로 같다 — skills/ 는 패키지에 실린다', (t) => {
+  const pkg = JSON.parse(readFileSync(join(HERE, 'package.json'), 'utf8'));
+  assert.ok(pkg.files.includes('skills/'), 'skills/ 가 files 에 없다 — 이 리포에서만 놓이고 설치된 리포에는 실려 가지 않는다');
+  const files = skillFiles();
+  assert.ok(files.length > 0, 'skills/ 에 .md 가 없다 — 0 이면 아래 비교가 공허해진다');
+
+  const r = newRepo(t);
+  const dry = init(r.dir, '--dry-run');
+  assert.equal(dry.out.split('\n').filter((l) => l.startsWith('DRY + .claude/skills/')).length, files.length, dry.out);
+  const got = init(r.dir);
+  assert.equal(got.code, 0, got.out);
+  for (const rel of files)
+    assert.equal(read(r.dir, `.claude/${rel}`), readFileSync(join(HERE, rel), 'utf8'),
+      `${rel} 이 원본과 다르다 — 복사가 아니라 생성이면 I7 이 깨진다`);
+
+  // 이미 있는 스킬은 소비 리포가 고친 판이다
+  const mine = `.claude/${files[0]}`;
+  r.write(mine, '이 리포가 고친 판이다.\n');
+  const again = init(r.dir);
+  assert.equal(read(r.dir, mine), '이 리포가 고친 판이다.\n');
+  assert.ok(again.out.includes(`${mine} — 이미 있다`), again.out);
+});
+
+test('스킬은 입구일 뿐이다 — 이름이 디렉토리와 같고, 부르는 커맨드와 가리키는 파일이 같은 판에 실린다', () => {
+  const pkg = JSON.parse(readFileSync(join(HERE, 'package.json'), 'utf8'));
+  const skills = skillFiles().filter((f) => f.endsWith('/SKILL.md'));
+  assert.ok(skills.length > 0, 'SKILL.md 가 없다');
+  for (const rel of skills) {
+    const text = readFileSync(join(HERE, rel), 'utf8');
+    const fm = text.match(/^---\n([\s\S]*?)\n---\n/);
+    assert.ok(fm, `${rel} 에 frontmatter 가 없다`);
+    const dir = rel.split('/')[1];
+    assert.match(fm[1], new RegExp(`^name: ${dir}$`, 'm'), `${rel}: name 이 디렉토리 이름(${dir})과 다르다`);
+    // Claude Code 는 description 을 1,536자에서 자른다 — 뒤쪽의 "쓰지 않는다" 가 잘리면 아무 때나 불린다
+    const desc = fm[1].match(/^description: (.+)$/m);
+    assert.ok(desc && desc[1].length <= 1536, `${rel}: description 이 없거나 1536자를 넘는다`);
+    // 절차의 출처는 커맨드다 — 그 커맨드가 같은 판에 없으면 입구가 허공을 가리킨다
+    const called = new Set([...text.matchAll(/`(module-[a-z]+)`/g)].map((m) => m[1]).filter((n) => n !== dir));
+    assert.ok(called.size > 0, `${rel}: 부르는 커맨드가 없다`);
+    for (const name of called)
+      assert.ok(commandNames().includes(`${name}.md`), `${rel} 이 부르는 ${name} 이 commands/ 에 없다`);
+    for (const [, p] of text.matchAll(/node_modules\/almandu-harness\/([\w./-]+)/g))
+      assert.ok(existsSync(join(HERE, p)) && pkg.files.some((f) => p === f || p.startsWith(f)),
+        `${rel} 이 가리키는 ${p} 가 패키지에 실리지 않는다`);
+  }
 });

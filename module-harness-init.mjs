@@ -3,7 +3,7 @@
 // 사용: npx --no-install almandu-harness-init [--dry-run] [--hooks-path <디렉토리>] [--no-config] [--override-hooks] [--no-commands]  (옛 이름은 별칭)
 //
 // 손으로 하던 다섯을 대신한다: pre-commit 훅 작성과 남의 훅에 게이트 배선, 루트 CLAUDE.md 에 계약 문단 추가,
-// MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리에 어댑터 생성, .claude/commands/ 에 커맨드 셋 복사.
+// MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리에 어댑터 생성, .claude/commands/ 에 커맨드 셋과 .claude/skills/ 에 그 입구 스킬 복사.
 // 게이트 바이너리에 넣지 않은 이유는 판정 도구가 파일을 쓰게 되면 harness I5 가 흐려지기 때문이다.
 // 이쪽은 처음부터 쓰는 도구이므로 판정을 하지 않는다 — 종료 코드는 쓰기 성공 여부뿐이다.
 import { execFileSync } from 'node:child_process';
@@ -116,6 +116,16 @@ if (!args.includes('--no-commands')) {
   else for (const name of readdirSync(cmdDir)) {
     if (!name.endsWith('.md')) continue;
     put(`.claude/commands/${name}`, readFileSync(join(cmdDir, name), 'utf8'));
+  }
+}
+// 스킬은 커맨드의 입구라 같은 플래그를 따르고, 같은 이유로 이름 목록 없이 디렉토리를 읽어 그대로 복사한다 (I7)
+if (!args.includes('--no-commands')) {
+  const skillDir = join(HERE, 'skills');
+  if (!existsSync(skillDir)) skipped.push('.claude/skills — 패키지에 skills/ 가 없다 (스킬이 실리기 전 판)');
+  else for (const name of readdirSync(skillDir)) {
+    if (!statSync(join(skillDir, name)).isDirectory()) continue;
+    for (const file of readdirSync(join(skillDir, name)))
+      if (file.endsWith('.md')) put(`.claude/skills/${name}/${file}`, readFileSync(join(skillDir, name, file), 'utf8'));
   }
 }
 

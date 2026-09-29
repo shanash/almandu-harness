@@ -527,6 +527,10 @@ test('설치가 끝나면 /module-work 가 설 수 있다', { skip: SKIP }, (t) 
   const persona = 'node_modules/almandu-harness/review/personas/invariant-judge.md';
   assert.ok(read(a.dir, '.claude/commands/module-review.md').includes(persona));
   assert.ok(has(a.dir, persona), '커맨드가 가리키는 페르소나가 패키지에 실려 오지 않았다');
+  const skill = 'skills/module-loop/SKILL.md';
+  assert.ok(has(a.dir, `.claude/${skill}`), '입구 스킬이 tarball 에 실려 오지 않았다 — files 를 본다');
+  assert.equal(read(a.dir, `.claude/${skill}`), readFileSync(join(HERE, skill), 'utf8'));
+  assert.match(got.out, /module-loop 스킬/);
   const scope = spawnSync(BASH, ['-c', `${loopCall(a.dir)} scope .`],
     { cwd: a.dir, env: f.env, encoding: 'utf8' });
   assert.equal(scope.status, 0, `${scope.stdout}${scope.stderr}`);

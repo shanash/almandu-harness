@@ -20,7 +20,8 @@
     "README.md",
     "loop/loop.mjs",
     "review/",
-    "commands/"
+    "commands/",
+    "skills/"
   ],
   "engines": {
     "node": ">=18"

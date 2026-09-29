@@ -71,7 +71,7 @@ usage() {
 --spec <npm-스펙>     GitHub 스펙 대신 npm 이 받는 무엇이든 (file:../module-harness 등). --ref 와 함께 쓸 수 없다.
 --hooks-path <디렉토리>  init 에 넘긴다. 리포 안의 상대 경로여야 한다.
 --no-config           init 에 넘긴다: core.hooksPath 를 건드리지 않는다.
---no-commands         init 에 넘긴다: .claude/commands/*.md 를 놓지 않는다. 종료 코드에는 영향이 없다.
+--no-commands         init 에 넘긴다: .claude/commands/*.md 와 그 입구인 .claude/skills/ 를 놓지 않는다. 종료 코드에는 영향이 없다.
 --override-hooks      이미 있는 core.hooksPath(로컬·전역)나 .git/hooks 의 훅을 덮거나 가리는 것을 허용한다.
 --yes                 거부되는 둘을 허용한다: root/all 이 아닌 allow-git 값 교체, 하위 디렉토리 대상의 최상위 package.json 생성.
 --dry-run             계획과 예상 종료 코드만 낸다. 아무것도 쓰지 않는다.
@@ -729,6 +729,9 @@ if [ -f "$ROOT/.claude/commands/module-work.md" ] || { [ "$DRY" = 1 ] && [ "$NO_
   # shellcheck disable=SC2016
   say '  2. 그 MODULE.md 의 in 에 `[[harness]] … (외부: almandu-harness)` 를 적는다 (R14)'
   say '  3. /module-work "<이번에 할 일>"   계약 → 수정 → 게이트 → 리뷰 → 커밋'
+  if [ -f "$ROOT/.claude/skills/module-loop/SKILL.md" ]; then
+    say "     치지 않고 할 일만 말해도 module-loop 스킬이 같은 절차로 들어간다"
+  fi
 else
   if [ -z "$HAS_HEAD" ]; then say '  0. git add -A && git commit -m "chore: 하네스 설치"'; fi
   say "  1. 모듈마다 MODULE.md 를 쓴다 (node_modules/almandu-harness/MODULE-schema-v1.md 가 규칙서다)"

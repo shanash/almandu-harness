@@ -13,6 +13,7 @@
 - loop/ — 변경을 계약 앞에 세우는 루프 (0.6.0 부터 `loop.mjs` 가 bin `almandu-module-loop` 으로 패키지에 실린다)
 - review/personas/ — 리뷰 패킷 하나에 답 하나를 내는 질문 프롬프트 (패키지에 실린다)
 - commands/ — 소비 리포의 `.claude/commands/` 에 놓이는 커맨드 셋 (0.8.0 부터 패키지에 실린다)
+- skills/ — 소비 리포의 `.claude/skills/` 에 놓이는 입구 스킬 `module-loop`. 절차를 담지 않고 `/module-work` 를 부른다 (다음 판부터 실린다)
 - observations/ — 게이트를 실제로 돌려 보고 남긴 관찰. 규칙이 왜 생겼는지의 출처다
 - CHANGELOG.md — 판마다 바뀐 것과 올릴 때 할 일. 패키지에 싣지 않는다 — https://github.com/shanash/almandu-harness/blob/main/CHANGELOG.md
 - LICENSE — 모든 권리 보유. 공개돼 있지만 사용 허락은 없다 (라이선스 절)
@@ -79,9 +80,12 @@ curl -fsSL https://raw.githubusercontent.com/shanash/almandu-harness/<태그>/al
 
 설치가 끝나면 `.claude/commands/` 에 `/module-work`·`/module-review`·`/module-draft` 셋이 놓이므로
 `/module-draft <디렉토리>` → `/module-work "<할 일>"` 로 바로 시작한다.
+`.claude/skills/module-loop/` 도 함께 놓인다 — 파일을 바꾸는 작업을 맡기면 `/module-work` 를 치지 않아도 에이전트가
+그 절차로 들어간다. 스킬은 언제 들어갈지만 갖고 절차는 커맨드를 부르므로, 고쳐 둔 `module-work` 가 그대로 돈다.
+스킬이 불리는지는 에이전트의 판단이라 강제가 아니다 — 건너뛴 변경은 여전히 커밋 때 게이트가 본다.
 **대상 리포에 커밋이 하나는 있어야 한다 — `/module-work` 의 1단계가 HEAD 를 읽는다. 갓 `git init` 한
 리포라면 먼저 한 번 커밋해라 (스크립트가 그 경우 첫 커밋을 다음 블록의 0 번으로 낸다).**
-커맨드가 필요 없으면 `--no-commands` 를 준다. 이미 있는 파일은 덮어쓰지 않으므로 고쳐 둔 커맨드는 안전하다.
+커맨드가 필요 없으면 `--no-commands` 를 준다 — 입구 스킬도 함께 빠진다. 이미 있는 파일은 덮어쓰지 않으므로 고쳐 둔 커맨드·스킬은 안전하다.
 **그 뒷면이 업그레이드다** — 커맨드 문구가 바뀐 판으로 올릴 때는 `.claude/commands/` 의 사본을 지우고
 설치 도구를 다시 돌려야 새 문구가 들어온다. `npm i` 만으로는 옛 문구가 그대로 남는다. 어느 판이 그런지는 CHANGELOG 의 "올릴 때 할 일" 이 판마다 적는다 (맨 위 목록의 링크).
 
@@ -98,7 +102,7 @@ node node_modules/almandu-harness/module-harness-init.mjs
 
 다섯을 놓는다 — `.githooks/pre-commit`(+ 가리는 것이 없을 때만 `core.hooksPath`, 가려도 되면 `--override-hooks`),
 켤 수 없을 때의 배선(git 이 실제로 실행할 pre-commit — 작업 트리 밖 `.git/hooks/` 일 수 있다), 루트 CLAUDE.md 의 계약 문단,
-MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리의 어댑터, `.claude/commands/` 의 커맨드 셋(`--no-commands` 로 끈다). 이미 있는 파일은 덮어쓰지 않고,
+MODULE.md 가 있는데 CLAUDE.md 가 없는 디렉토리의 어댑터, `.claude/commands/` 의 커맨드 셋과 `.claude/skills/` 의 입구 스킬(둘 다 `--no-commands` 로 끈다). 이미 있는 파일은 덮어쓰지 않고,
 이미 있는 CLAUDE.md 에는 어댑터를 맨 앞에 얹는다. 두 번 돌려도 같은 상태다.
 
 훅은 게이트를 npx 가 아니라 **파일 경로**로 부른다 —
@@ -134,7 +138,7 @@ node node_modules/almandu-harness/module-gate.mjs --audit             # diff 무
 node node_modules/almandu-harness/module-gate.mjs --json              # 같은 판정을 기계 판독 형태로 (stdout 전용)
 node node_modules/almandu-harness/module-gate.mjs --scope <경로>...   # 판정 안 함: 그 경로를 고치려면 읽어야 할 계약
 node node_modules/almandu-harness/module-gate.mjs --review            # 판정 안 함: 이 diff 를 리뷰할 때 봐야 할 불변식과 그 태그
-npm test                                                 # 회귀 테스트 143개, ~71초 (2026-09-23 실측)
+npm test                                                 # 회귀 테스트 145개, ~77초 (2026-09-29 실측)
 ```
 
 이름 해석에 기대는 실행기는 어디서도 쓰지 않는다 — `almandu-*` 이름은 npm 에 올라가 있지 않아서, 로컬 설치가
